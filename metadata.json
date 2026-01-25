@@ -1,0 +1,7 @@
+{
+  "name": "Workshop Manager Pro",
+  "description": "A comprehensive workshop management system for tracking tools, fleet, and workshops with logistics and history tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
