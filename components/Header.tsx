@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { LogOut, Bell, Search, RefreshCw, X, Menu, CheckCircle2, AlertTriangle, Clock } from 'lucide-react';
+import { LogOut, Bell, Search, RefreshCw, X, Menu, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { User, ModuleType } from '../types';
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   onLogout: () => void;
   activeModule: ModuleType;
   toggleSidebar: () => void;
+  onRefresh: () => void;
 }
 
 const MOCK_NOTIFICATIONS = [
@@ -16,19 +17,19 @@ const MOCK_NOTIFICATIONS = [
   { id: 3, type: 'INFO', text: 'Zaplanowano wydanie dla oddziału Suwałki.', time: '3h temu' },
 ];
 
-const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSidebar }) => {
+const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSidebar, onRefresh }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
 
-  const handleRefresh = () => {
+  const handleRefreshClick = () => {
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 2000);
+    onRefresh(); // Trigger parent refresh logic
+    setTimeout(() => setIsRefreshing(false), 1500);
   };
 
   return (
-    <header className="h-24 bg-white/80 backdrop-blur-2xl border-b border-slate-100 flex items-center justify-between px-4 lg:px-12 sticky top-0 z-40 shadow-sm">
+    <header className="h-24 bg-white/80 backdrop-blur-2xl border-b border-slate-100 flex items-center justify-between px-4 lg:px-12 sticky top-0 z-40 shadow-sm shrink-0">
       <div className="flex items-center space-x-4 lg:space-x-10">
-        {/* Hamburger Menu Mobile */}
         <button onClick={toggleSidebar} className="lg:hidden p-3 text-slate-500 hover:bg-slate-50 rounded-2xl transition-all">
           <Menu size={24} />
         </button>
@@ -52,8 +53,9 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSid
 
       <div className="flex items-center space-x-2 lg:space-x-8">
         <button 
-          onClick={handleRefresh}
+          onClick={handleRefreshClick}
           className={`p-3 lg:p-4 text-slate-400 hover:text-[#22c55e] hover:bg-green-50 rounded-[1.2rem] lg:rounded-[1.5rem] transition-all ${isRefreshing ? 'bg-green-50 text-[#22c55e]' : ''}`}
+          title="Odśwież dane"
         >
           <RefreshCw size={20} className={isRefreshing ? 'animate-spin-slow' : ''} />
         </button>
@@ -96,7 +98,7 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSid
         <div className="flex items-center space-x-2 lg:space-x-6 pl-2 lg:pl-8 border-l border-slate-100">
           <button 
             onClick={onLogout}
-            className="w-10 h-10 lg:w-14 lg:h-14 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white rounded-[1rem] lg:rounded-[1.5rem] transition-all flex items-center justify-center"
+            className="w-10 h-10 lg:w-14 lg:h-14 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white rounded-[1rem] lg:rounded-[1.5rem] transition-all flex items-center justify-center shadow-sm"
           >
             <LogOut size={20} />
           </button>

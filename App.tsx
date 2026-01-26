@@ -22,18 +22,22 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<ModuleType>('NARZĘDZIA');
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
   const [simulationBranchId, setSimulationBranchId] = useState<string>('all');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('wm_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    try {
+      const savedUser = localStorage.getItem('wm_user');
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (error) {
+      console.error("Błąd podczas ładowania sesji:", error);
+      localStorage.removeItem('wm_user'); // Czyścimy błędne dane
     }
 
     const handleResize = () => {
       if (window.innerWidth >= 1024) {
         setIsSidebarOpen(true);
-      } else {
-        setIsSidebarOpen(false);
       }
     };
 
@@ -60,27 +64,38 @@ const App: React.FC = () => {
     setUser(null);
   };
 
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   if (!user) {
     return <Login onLogin={handleLogin} />;
   }
 
   const renderModule = () => {
+    const commonProps = { 
+      refreshTrigger, 
+      user, 
+      simulationBranchId, 
+      branches: MOCK_BRANCHES 
+    };
+
     switch (activeModule) {
       case 'NARZĘDZIA':
-        return <ToolsModule user={user} simulationBranchId={simulationBranchId} branches={MOCK_BRANCHES} />;
+        return <ToolsModule {...commonProps} />;
       case 'MOJA FLOTA':
-        return <FleetModule user={user} simulationBranchId={simulationBranchId} branches={MOCK_BRANCHES} />;
+        return <FleetModule {...commonProps} />;
       case 'MÓJ WARSZTAT':
-        return <WorkshopModule user={user} simulationBranchId={simulationBranchId} branches={MOCK_BRANCHES} />;
+        return <WorkshopModule {...commonProps} />;
       case 'UŻYTKOWNICY':
         return <UsersModule user={user} branches={MOCK_BRANCHES} />;
       default:
-        return <ToolsModule user={user} simulationBranchId={simulationBranchId} branches={MOCK_BRANCHES} />;
+        return <ToolsModule {...commonProps} />;
     }
   };
 
   return (
-    <div className="min-h-screen flex bg-[#f8fafc] selection:bg-[#22c55e]/30 relative">
+    <div className="min-h-screen flex bg-[#f8fafc] selection:bg-[#22c55e]/30 relative overflow-hidden">
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && window.innerWidth < 1024 && (
         <div 
@@ -109,9 +124,10 @@ const App: React.FC = () => {
           onLogout={handleLogout} 
           activeModule={activeModule}
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          onRefresh={handleRefresh}
         />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
-          <div className="max-w-[1920px] mx-auto pb-20">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative flex flex-col bg-[#f8fafc]">
+          <div className="flex-1 w-full max-w-[1920px] mx-auto flex flex-col">
             {renderModule()}
           </div>
         </main>
