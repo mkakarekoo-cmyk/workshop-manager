@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [lastReadAt, setLastReadAt] = useState<number>(Date.now());
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
 
@@ -105,6 +106,9 @@ const App: React.FC = () => {
           let message = `${log.tool?.name || 'Zasób'}: ${log.action}`;
           let type: 'INFO' | 'WARNING' | 'SUCCESS' = 'INFO';
 
+          const logTime = new Date(log.created_at).getTime();
+          const isRead = logTime <= lastReadAt;
+
           if (log.action === 'PRZESUNIĘCIE') {
             const isToMyBranch = Number(log.to_branch_id) === branchNum;
             const toolWaiting = log.tool?.status === ToolStatus.IN_TRANSIT && Number(log.tool?.target_branch_id) === Number(log.to_branch_id);
@@ -145,7 +149,7 @@ const App: React.FC = () => {
             message,
             type,
             created_at: log.created_at,
-            is_read: false
+            is_read: isRead
           };
         });
         setNotifications(mapped);
@@ -153,7 +157,12 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Notification Error:", e);
     }
-  }, [user, simulationBranchId]);
+  }, [user, simulationBranchId, lastReadAt]);
+
+  const markNotificationsRead = () => {
+    setLastReadAt(Date.now());
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -227,6 +236,7 @@ const App: React.FC = () => {
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
           onRefresh={onRefresh}
           notifications={notifications}
+          onMarkRead={markNotificationsRead}
         />
         <main className="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
           <div className="max-w-[1920px] mx-auto">

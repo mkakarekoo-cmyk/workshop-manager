@@ -10,9 +10,10 @@ interface HeaderProps {
   toggleSidebar: () => void;
   onRefresh: () => void;
   notifications: AppNotification[];
+  onMarkRead: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, onRefresh, notifications }) => {
+const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, onRefresh, notifications, onMarkRead }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   
@@ -22,6 +23,13 @@ const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, 
     setIsRefreshing(true);
     onRefresh();
     setTimeout(() => setIsRefreshing(false), 1200);
+  };
+
+  const toggleNotif = () => {
+    if (!isNotifOpen) {
+      onMarkRead();
+    }
+    setIsNotifOpen(!isNotifOpen);
   };
 
   return (
@@ -49,7 +57,7 @@ const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, 
 
         <div className="relative">
           <button 
-            onClick={() => setIsNotifOpen(!isNotifOpen)}
+            onClick={toggleNotif}
             className={`p-3 sm:p-5 rounded-xl sm:rounded-[1.8rem] transition-all relative ${isNotifOpen ? 'bg-slate-100 text-[#0f172a]' : 'text-slate-400 hover:text-[#22c55e]'}`}
           >
             <Bell size={18} className="sm:size-[22px]" />

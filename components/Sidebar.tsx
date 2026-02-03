@@ -90,8 +90,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="shrink-0 mt-auto border-t border-white/5">
         <div className="p-8">
-          <div className="flex flex-row justify-between items-center bg-white/5 p-4 rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden group">
-            <div className="flex items-center min-w-0">
+          <div className="flex flex-row items-center bg-white/5 p-4 rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden group">
+            <div className="flex items-center min-w-0 flex-1">
                 <div className="relative shrink-0 w-12 h-12 bg-[#22c55e] rounded-2xl flex items-center justify-center text-white font-black border-2 border-white/20 shadow-2xl z-10">
                 {user.email.charAt(0).toUpperCase()}
                 </div>
@@ -102,9 +102,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 )}
             </div>
-            {isOpen && (
-              <button onClick={() => supabase.auth.signOut()} className="ml-2 p-3 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl transition-all relative z-20"><LogOut size={18} /></button>
-            )}
           </div>
         </div>
         <button onClick={toggleSidebar} className="w-full py-8 text-slate-600 hover:text-white transition-all bg-black/20 hover:bg-black/40 flex items-center justify-center">
