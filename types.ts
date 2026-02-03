@@ -79,6 +79,7 @@ export interface AppNotification {
   type: 'INFO' | 'WARNING' | 'SUCCESS';
   created_at: string;
   is_read: boolean;
+  tool_id?: string;
 }
 
 // Add missing interfaces for Fleet and Workshop modules

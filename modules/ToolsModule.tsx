@@ -21,10 +21,12 @@ interface ToolsModuleProps {
   refreshTrigger: number;
   onRefresh: () => void;
   viewMode: 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK';
+  targetToolId?: string | null;
+  onTargetToolClear?: () => void;
 }
 
 const ToolsModule: React.FC<ToolsModuleProps> = ({ 
-  user, simulationBranchId, branches, refreshTrigger, onRefresh, viewMode 
+  user, simulationBranchId, branches, refreshTrigger, onRefresh, viewMode, targetToolId, onTargetToolClear
 }) => {
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +72,14 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     if (!selectedTool) return false;
     return Number(selectedTool.branch_id) === effectiveBranchId;
   }, [selectedTool, effectiveBranchId]);
+
+  // Obsługa nawigacji z powiadomień
+  useEffect(() => {
+    if (targetToolId) {
+      setSelectedToolId(targetToolId);
+      if (onTargetToolClear) onTargetToolClear();
+    }
+  }, [targetToolId, onTargetToolClear]);
 
   useEffect(() => {
     if (selectedToolId) {

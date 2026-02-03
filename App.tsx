@@ -32,6 +32,7 @@ const App: React.FC = () => {
   const [lastReadAt, setLastReadAt] = useState<number>(Date.now());
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [targetToolId, setTargetToolId] = useState<string | null>(null);
 
   const fetchAllUsers = useCallback(async () => {
     try {
@@ -91,7 +92,7 @@ const App: React.FC = () => {
       
       const { data, error } = await supabase
         .from('tool_logs')
-        .select('*, tool:tools(name, status, target_branch_id), from_branch:branches!tool_logs_from_branch_id_fkey(name), to_branch:branches!tool_logs_to_branch_id_fkey(name)')
+        .select('*, tool:tools(name, status, target_branch_id, id), from_branch:branches!tool_logs_from_branch_id_fkey(name), to_branch:branches!tool_logs_to_branch_id_fkey(name)')
         .order('created_at', { ascending: false })
         .limit(isGlobal ? 30 : 15);
 
@@ -149,7 +150,8 @@ const App: React.FC = () => {
             message,
             type,
             created_at: log.created_at,
-            is_read: isRead
+            is_read: isRead,
+            tool_id: log.tool?.id
           };
         });
         setNotifications(mapped);
@@ -162,6 +164,13 @@ const App: React.FC = () => {
   const markNotificationsRead = () => {
     setLastReadAt(Date.now());
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+  };
+
+  const handleNotificationClick = (n: AppNotification) => {
+    if (n.tool_id) {
+      setActiveModule('BAZA NARZĘDZI');
+      setTargetToolId(n.tool_id);
+    }
   };
 
   useEffect(() => {
@@ -237,6 +246,7 @@ const App: React.FC = () => {
           onRefresh={onRefresh}
           notifications={notifications}
           onMarkRead={markNotificationsRead}
+          onNotificationClick={handleNotificationClick}
         />
         <main className="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
           <div className="max-w-[1920px] mx-auto">
@@ -248,6 +258,8 @@ const App: React.FC = () => {
                   refreshTrigger={refreshTrigger} 
                   onRefresh={onRefresh} 
                   viewMode={activeModule as any} 
+                  targetToolId={targetToolId}
+                  onTargetToolClear={() => setTargetToolId(null)}
                />
              ) : null}
              {activeModule === 'UŻYTKOWNICY' && (
@@ -269,7 +281,7 @@ const App: React.FC = () => {
           </div>
           <footer className="w-full py-24 flex flex-col items-center justify-center space-y-6 mt-20 border-t border-slate-100 bg-white/50 backdrop-blur-sm">
             <p className="text-slate-300 text-[10px] font-black uppercase tracking-[1em] leading-none">
-              © 2026 Menadżer Narzędzi - System Logistyczny (KROK 1.8)
+              © 2026 Menadżer Narzędzi - System Logistyczny (KROK 1.9)
             </p>
             <div className="flex items-center space-x-6">
               <div className="h-[1px] w-16 bg-slate-100"></div>

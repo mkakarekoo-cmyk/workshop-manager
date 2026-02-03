@@ -11,9 +11,10 @@ interface HeaderProps {
   onRefresh: () => void;
   notifications: AppNotification[];
   onMarkRead: () => void;
+  onNotificationClick: (n: AppNotification) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, onRefresh, notifications, onMarkRead }) => {
+const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, onRefresh, notifications, onMarkRead, onNotificationClick }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   
@@ -30,6 +31,11 @@ const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, 
       onMarkRead();
     }
     setIsNotifOpen(!isNotifOpen);
+  };
+
+  const handleNotifClick = (n: AppNotification) => {
+    onNotificationClick(n);
+    setIsNotifOpen(false);
   };
 
   return (
@@ -86,7 +92,11 @@ const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, 
                    ) : (
                      <div className="divide-y divide-white/5">
                         {notifications.map(n => (
-                          <div key={n.id} className={`p-8 flex items-start space-x-6 hover:bg-white/5 transition-all group ${n.type === 'SUCCESS' ? 'bg-green-500/5' : ''}`}>
+                          <div 
+                            key={n.id} 
+                            onClick={() => handleNotifClick(n)}
+                            className={`p-8 flex items-start space-x-6 hover:bg-white/10 transition-all group cursor-pointer ${n.type === 'SUCCESS' ? 'bg-green-500/5' : ''}`}
+                          >
                              <div className={`p-4 rounded-2xl shrink-0 shadow-2xl transform group-hover:scale-110 transition-transform ${
                                n.type === 'WARNING' ? 'bg-amber-500' : 
                                n.type === 'SUCCESS' ? 'bg-[#22c55e]' : 'bg-blue-600'
