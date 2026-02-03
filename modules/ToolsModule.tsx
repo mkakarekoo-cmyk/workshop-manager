@@ -52,14 +52,16 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [newPhotoPreview, setNewPhotoPreview] = useState<string | null>(null);
 
-  // LOGIKA RÓL (RBAC)
+  // LOGIKA RÓL
   const isAdmin = user.role === 'ADMINISTRATOR';
   const isMechanic = user.role === 'MECHANIK';
 
   const selectedTool = useMemo(() => tools.find(t => t.id === selectedToolId), [tools, selectedToolId]);
 
+  // effectiveBranchId musi być nadrzędny nad user.branch_id
   const effectiveBranchId = useMemo(() => {
-    return simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId);
+    if (simulationBranchId === 'all') return Number(user.branch_id);
+    return Number(simulationBranchId);
   }, [simulationBranchId, user.branch_id]);
 
   useEffect(() => {
@@ -98,9 +100,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         .order('name', { ascending: true })
         .range(currentOffset, currentOffset + PAGE_SIZE - 1);
 
+      // RYGORYSTYCZNE FILTROWANIE DLA WIDOKU 'MOJE NARZĘDZIA'
       if (viewMode === 'MOJE NARZĘDZIA') {
-        query = query.eq('branch_id', Number(user.branch_id));
-      } else if (simulationBranchId !== 'all' && viewMode !== 'BAZA NARZĘDZI') {
+        // Filtracja musi nastąpić na poziomie bazy danych
+        query = query.eq('branch_id', effectiveBranchId);
+      } else if (simulationBranchId !== 'all') {
+        // Jeśli nie jesteśmy w globalnej bazie, zawsze filtrujemy po oddziale
         query = query.eq('branch_id', effectiveBranchId);
       }
 
@@ -120,11 +125,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [viewMode, simulationBranchId, searchTerm, effectiveBranchId, offset, user.branch_id]);
+  }, [viewMode, simulationBranchId, searchTerm, effectiveBranchId, offset]);
 
   useEffect(() => {
     fetchTools();
-  }, [refreshTrigger, viewMode, simulationBranchId, searchTerm]);
+  }, [refreshTrigger, viewMode, simulationBranchId, searchTerm, effectiveBranchId]);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -169,11 +174,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         tool_id: tool.id,
         action: 'PRZYJĘCIE',
         to_branch_id: Number(newBranchId),
-        notes: 'Dodano do bazy przez administratora',
+        notes: 'Wprowadzono do zasobów centralnych',
         operator_id: user.id
       });
 
-      alert("Zasób został dodany.");
+      alert("Zasób dodany.");
       setIsAddModalOpen(false);
       setNewName(''); setNewSerialNumber(''); setNewDescription(''); setNewPhoto(null); setNewPhotoPreview(null);
       onRefresh();
@@ -184,22 +189,22 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     if (!selectedTool) return;
     setIsSubmitting(true);
     try {
-      // WAŻNE: Przyjęcie wykonuje się na oddział aktualnie wybrany w symulacji (lub domyślny usera)
       const targetId = effectiveBranchId;
 
       if (action === 'MAINTENANCE') {
         await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd: ${notes}`, operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.MAINTENANCE }).eq('id', selectedTool.id);
       } else if (action === 'TRANSFER') {
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Wysyłka', operator_id: user.id });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
       } else if (action === 'RECEIPT') {
-        // Przyjęcie na stan
         const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
         await supabase.from('tools').update({ status: newStatus, branch_id: targetId, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: targetId, notes: `Odebrano przesyłkę w oddziale.`, operator_id: user.id });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: targetId, notes: `Przyjęto fizycznie w bazie oddziału.`, operator_id: user.id });
+        alert("Narzędzie przyjęte na stan.");
       } else if (action === 'ORDER') {
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Zapotrzebowanie', operator_id: user.id });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Potrzeba oddziału', operator_id: user.id });
+        alert("Zgłoszono zapotrzebowanie.");
       }
 
       onRefresh();
@@ -220,15 +225,19 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-6 bg-[#0f172a] p-6 sm:p-10 rounded-[2rem] lg:rounded-[4rem] shadow-2xl border-b-8 border-[#22c55e]">
         <div className="relative z-10">
           <h2 className="text-2xl sm:text-5xl font-black text-white uppercase italic tracking-tighter leading-none mb-2 sm:mb-3">{viewMode}</h2>
-          <p className="text-[#22c55e] text-[8px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] flex items-center italic">
-            <Archive size={12} className="mr-2 sm:mr-3"/> 
-            {simulationBranchId === 'all' ? 'CENTRALNY WIDOK SYSTEMU' : `LOKALIZACJA: ${branches.find(b => Number(b.id) === effectiveBranchId)?.name.toUpperCase()}`}
-          </p>
+          <div className="flex items-center mt-2 sm:mt-4">
+             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#22c55e]/10 rounded-xl flex items-center justify-center text-[#22c55e] mr-4 shadow-inner">
+                <MapPinned size={16}/>
+             </div>
+             <p className="text-[#22c55e] text-[9px] sm:text-[11px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] italic">
+               {simulationBranchId === 'all' ? 'CENTRALNY WIDOK SYSTEMU' : `AKTYWNY ODDZIAŁ: ${branches.find(b => Number(b.id) === effectiveBranchId)?.name.toUpperCase()}`}
+             </p>
+          </div>
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto z-10">
           <div className="relative group w-full lg:w-[450px]">
              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-             <input type="text" placeholder="Szukaj po nazwie lub S/N..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-14 pr-6 py-4 sm:py-6 bg-slate-800 text-white border border-slate-700 rounded-[1.5rem] sm:rounded-[2.5rem] text-xs sm:text-sm font-black outline-none focus:border-[#22c55e] uppercase transition-all" />
+             <input type="text" placeholder="Szukaj zasobu..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-14 pr-6 py-4 sm:py-6 bg-slate-800 text-white border border-slate-700 rounded-[1.5rem] sm:rounded-[2.5rem] text-xs sm:text-sm font-black outline-none focus:border-[#22c55e] uppercase transition-all" />
           </div>
           {isAdmin && (
             <button onClick={() => setIsAddModalOpen(true)} className="w-full sm:w-auto px-8 py-4 sm:py-6 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[2.2rem] text-[10px] font-black uppercase tracking-widest shadow-2xl border-b-4 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Plus size={18}/><span>Dodaj Narzędzie</span></button>
@@ -248,13 +257,20 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
             <thead>
               <tr className="bg-slate-50/80 text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] border-b border-slate-100 italic">
                 <th className="px-12 py-8">Zasób / Specyfikacja</th>
-                <th className="px-12 py-8">Aktualna Baza</th>
-                <th className="px-12 py-8">Status Logistyczny</th>
+                <th className="px-12 py-8">Lokalizacja</th>
+                <th className="px-12 py-8">Status</th>
                 <th className="px-12 py-8 text-right">Akcja</th>
               </tr>
             </thead>
             <tbody className="divide-y-2 divide-slate-50">
-              {tools.map(tool => (
+              {tools.length === 0 && !loading ? (
+                <tr>
+                   <td colSpan={4} className="px-12 py-32 text-center">
+                      <Package size={64} className="mx-auto text-slate-100 mb-6" />
+                      <p className="text-slate-300 font-black uppercase tracking-widest text-xs italic">Brak narzędzi w tej lokalizacji</p>
+                   </td>
+                </tr>
+              ) : tools.map(tool => (
                 <ToolRow 
                   key={tool.id} 
                   tool={tool} 
@@ -283,68 +299,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         </div>
       </div>
 
-      {/* MODAL DODAWANIA */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
-          <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-3xl" onClick={() => setIsAddModalOpen(false)}></div>
-          <div className="relative w-full max-w-4xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500 flex flex-col max-h-[95vh]">
-             <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center border-b-8 border-[#22c55e] shrink-0">
-                <div className="flex items-center space-x-6">
-                  <div className="w-16 h-16 bg-[#22c55e] rounded-2xl flex items-center justify-center shadow-xl rotate-3"><Plus size={28}/></div>
-                  <div>
-                    <h3 className="text-xl sm:text-3xl font-black uppercase italic leading-none">Wprowadź Zasób</h3>
-                    <p className="text-[#22c55e] text-[9px] font-black uppercase tracking-widest mt-2">Baza Systemowa Narzędzi</p>
-                  </div>
-                </div>
-                <button onClick={() => setIsAddModalOpen(false)} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
-             </div>
-             <form onSubmit={handleAddTool} className="p-8 sm:p-12 space-y-8 sm:space-y-12 overflow-y-auto no-scrollbar">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
-                   <div className="space-y-8">
-                      <div className="space-y-4">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nazwa</label>
-                         <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-6">
-                         <div className="space-y-4">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">S/N</label>
-                            <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="Numer seryjny" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
-                         </div>
-                         <div className="space-y-4">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Baza</label>
-                            <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none appearance-none cursor-pointer">
-                              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-                            </select>
-                         </div>
-                      </div>
-                   </div>
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic">Zdjęcie</label>
-                      <label className="w-full h-64 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center cursor-pointer hover:border-[#22c55e] transition-all overflow-hidden group shadow-inner relative">
-                        {newPhotoPreview ? (
-                          <img src={newPhotoPreview} className="w-full h-full object-cover" alt="Preview" />
-                        ) : (
-                          <>
-                            <Camera size={48} className="text-slate-200 group-hover:scale-110 transition-transform mb-4" />
-                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Wgraj zdjęcie zasobu</p>
-                          </>
-                        )}
-                        <input type="file" className="hidden" accept="image/*" onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) { setNewPhoto(file); setNewPhotoPreview(URL.createObjectURL(file)); }
-                        }} />
-                      </label>
-                   </div>
-                </div>
-                <button type="submit" disabled={isSubmitting} className="w-full py-6 sm:py-8 bg-[#22c55e] text-white rounded-[2rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-4 active:scale-95 transition-all">
-                  {isSubmitting ? <Loader className="animate-spin" size={24}/> : <Save size={24}/>}
-                  <span>Dodaj do bazy</span>
-                </button>
-             </form>
-          </div>
-        </div>
-      )}
-
       {selectedTool && (
         <div className="fixed inset-0 z-[5000] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-3xl" onClick={() => setSelectedToolId(null)}></div>
@@ -357,44 +311,43 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                  </div>
                  <div className="min-w-0">
                    <h3 className="text-lg sm:text-4xl font-black uppercase tracking-tighter italic leading-none truncate">{selectedTool.name}</h3>
-                   <p className="text-[#22c55e] text-[8px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] mt-2 sm:mt-4">ZARZĄDZANIE LOGISTYCZNE</p>
+                   <p className="text-[#22c55e] text-[8px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] mt-2 sm:mt-4">LOGISTYKA ODDZIAŁOWA</p>
                  </div>
                </div>
-               <button onClick={() => setSelectedToolId(null)} className="p-3 sm:p-6 bg-white/10 rounded-full hover:bg-white/20 active:scale-90 transition-all shrink-0"><X size={20} className="sm:size-8" /></button>
+               <button onClick={() => setSelectedToolId(null)} className="p-3 sm:p-6 bg-white/10 rounded-full hover:bg-white/20 transition-all shrink-0"><X size={20} className="sm:size-8" /></button>
             </div>
             
             <div className="flex-1 overflow-y-auto no-scrollbar p-6 sm:p-12 space-y-8 sm:space-y-12">
                <div className="flex bg-slate-50 p-1.5 rounded-[1.5rem] sm:rounded-[3rem] border border-slate-100 shadow-inner overflow-x-auto no-scrollbar gap-1 shrink-0">
                  {!isMechanic && <ManageTab active={manageTab === 'LOGISTYKA'} onClick={() => setManageTab('LOGISTYKA')} icon={<ArrowRightLeft size={16} />} label="Logistyka" />}
                  <ManageTab active={manageTab === 'TIMELINE'} onClick={() => setManageTab('TIMELINE')} icon={<History size={16} />} label="Historia" />
-                 <ManageTab active={manageTab === 'INFO'} onClick={() => setManageTab('INFO')} icon={<Info size={16} />} label="Dokumentacja" />
+                 <ManageTab active={manageTab === 'INFO'} onClick={() => setManageTab('INFO')} icon={<Info size={16} />} label="Instrukcja" />
                </div>
 
                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {manageTab === 'LOGISTYKA' && !isMechanic && (
                     <div className="space-y-8 sm:space-y-12">
-                      {/* AKCEPTACJA DOSTARCZENIA - KLUCZOWA POPRAWKA */}
                       {selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === effectiveBranchId ? (
-                         <div className="p-8 sm:p-16 bg-blue-50 border-4 border-dashed border-blue-200 rounded-[2rem] sm:rounded-[4rem] text-center space-y-8 sm:space-y-14 shadow-inner animate-pulse">
+                         <div className="p-8 sm:p-16 bg-blue-50 border-4 border-dashed border-blue-200 rounded-[2rem] sm:rounded-[4rem] text-center space-y-8 sm:space-y-14 shadow-inner">
                             <Truck size={64} className="mx-auto text-blue-500 animate-bounce" />
                             <div className="space-y-4">
-                               <h4 className="text-xl sm:text-5xl font-black text-blue-900 uppercase italic leading-none">DOSTARCZONE DO ODDZIAŁU</h4>
-                               <p className="text-blue-400 font-bold uppercase tracking-widest text-xs">Potwierdź fizyczne przyjęcie narzędzia na stan</p>
+                               <h4 className="text-xl sm:text-5xl font-black text-blue-900 uppercase italic leading-none animate-pulse">PRZESYŁKA DOTARŁA</h4>
+                               <p className="text-blue-400 font-bold uppercase tracking-widest text-xs">Potwierdź fizyczny odbiór w Twojej lokalizacji</p>
                             </div>
                             <button onClick={() => handleLogisticsAction('RECEIPT')} disabled={isSubmitting} className="w-full py-8 sm:py-12 bg-blue-600 text-white rounded-[1.5rem] sm:rounded-[4rem] font-black uppercase shadow-2xl border-b-8 border-blue-900 flex items-center justify-center space-x-6 hover:bg-blue-700 transition-all">
                                {isSubmitting ? <Loader className="animate-spin" size={24}/> : <PackageCheck size={32}/>}
-                               <span>PRZYJMIJ NA STAN ODDZIAŁU</span>
+                               <span>ZATWIERDŹ PRZYJĘCIE</span>
                             </button>
                          </div>
                       ) : (Number(selectedTool.branch_id) === effectiveBranchId || isAdmin) ? (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
                           <div className="space-y-6 sm:space-y-10">
-                            <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">WYŚLIJ W DROGĘ</label>
+                            <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">WYŚLIJ DO INNEGO ODDZIAŁU</label>
                             <select value={transferBranchId} onChange={e => setTransferBranchId(e.target.value)} className="w-full px-6 py-4 sm:px-10 sm:py-7 bg-slate-50 border border-slate-200 rounded-[1.2rem] sm:rounded-[3rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]">
                                 {branches.filter(b => Number(b.id) !== Number(selectedTool.branch_id)).map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                             </select>
                             <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi transportowe..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
-                            <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 hover:bg-green-600 transition-all"><Send size={20}/> <span>ROZPOCZNIJ TRANSPORT</span></button>
+                            <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3"><Send size={20}/> <span>WYSYŁKA</span></button>
                           </div>
                           <div className="flex flex-col justify-center p-8 sm:p-14 bg-amber-50/50 rounded-[2rem] sm:rounded-[5rem] border-4 border-dashed border-amber-200 text-center space-y-6 sm:space-y-10">
                              <Hammer size={32} className="mx-auto text-amber-500 animate-pulse"/>
@@ -405,9 +358,9 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                       ) : (
                         <div className={`flex flex-col items-center p-8 sm:p-14 rounded-[2rem] sm:rounded-[5rem] border-4 border-dashed text-center space-y-6 sm:space-y-10 ${selectedTool.status === ToolStatus.OCCUPIED ? 'bg-rose-50 border-rose-200' : 'bg-amber-50/50 border-amber-200'}`}>
                             {selectedTool.status === ToolStatus.OCCUPIED ? <BookmarkPlus size={40} className="text-rose-500 animate-pulse"/> : <ShoppingBag size={40} className="text-amber-500"/>}
-                            <h4 className="text-xl sm:text-4xl font-black text-[#0f172a] uppercase italic leading-none">{selectedTool.status === ToolStatus.OCCUPIED ? 'REZERWACJA' : 'ZAMÓWIENIE'}</h4>
+                            <h4 className="text-xl sm:text-4xl font-black text-[#0f172a] uppercase italic leading-none">{selectedTool.status === ToolStatus.OCCUPIED ? 'ZAREZERWUJ' : 'ZAMÓW DO SIEBIE'}</h4>
                             <button onClick={() => handleLogisticsAction('ORDER')} disabled={isSubmitting} className={`w-full py-6 sm:py-10 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 ${selectedTool.status === ToolStatus.OCCUPIED ? 'bg-rose-500 border-rose-800' : 'bg-amber-500 border-amber-800'}`}>
-                               {selectedTool.status === ToolStatus.OCCUPIED ? 'POTWIERDŹ REZERWACJĘ' : 'WYŚLIJ ZAMÓWIENIE'}
+                               {selectedTool.status === ToolStatus.OCCUPIED ? 'POTWIERDŹ REZERWACJĘ' : 'WYŚLIJ ZAPOTRZEBOWANIE'}
                             </button>
                         </div>
                       )}
@@ -420,7 +373,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                         <div key={log.id} className="relative bg-white border-2 border-slate-50 p-5 sm:p-8 rounded-[1.5rem] sm:rounded-[3rem] shadow-xl border-l-8 border-l-[#22c55e]">
                            <div className="absolute -left-[2.2rem] sm:-left-[3.75rem] top-6 sm:top-8 w-8 h-8 sm:w-12 sm:h-12 bg-white border-4 border-slate-50 rounded-xl flex items-center justify-center text-[#22c55e] shadow-lg"><Clock size={16}/></div>
                            <h4 className="text-sm sm:text-xl font-black uppercase italic mb-2 leading-none">{log.action}</h4>
-                           <p className="text-[10px] sm:text-[12px] font-bold text-slate-500 uppercase italic leading-tight">"{log.notes || "Operacja systemowa"}"</p>
+                           <p className="text-[10px] sm:text-[12px] font-bold text-slate-500 uppercase italic leading-tight">"{log.notes || "Zdarzenie systemowe"}"</p>
                            <p className="mt-3 text-[7px] sm:text-[8px] font-black uppercase text-slate-300 italic">{new Date(log.created_at).toLocaleString('pl-PL')}</p>
                         </div>
                       ))}
@@ -431,13 +384,84 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                     <div className="space-y-8 sm:space-y-12 pb-10">
                        <div className="p-8 sm:p-12 bg-slate-50 rounded-[1.5rem] sm:rounded-[4rem] border-2 border-slate-100 italic min-h-[120px] shadow-inner flex items-center justify-center text-center">
                            <p className="text-slate-600 font-bold uppercase text-xs sm:text-sm leading-relaxed">
-                              {selectedTool.description || "Brak instrukcji przeznaczenia w bazie."}
+                              {selectedTool.description || "Brak instrukcji przeznaczenia w bazie danych."}
                             </p>
                         </div>
                     </div>
                   )}
                </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-3xl" onClick={() => setIsAddModalOpen(false)}></div>
+          <div className="relative w-full max-w-4xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500 flex flex-col max-h-[95vh]">
+             <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center border-b-8 border-[#22c55e] shrink-0">
+                <div className="flex items-center space-x-6">
+                  <div className="w-16 h-16 bg-[#22c55e] rounded-2xl flex items-center justify-center shadow-xl rotate-3"><Plus size={28}/></div>
+                  <div>
+                    <h3 className="text-xl sm:text-3xl font-black uppercase italic leading-none">Dodaj Narzędzie</h3>
+                    <p className="text-[#22c55e] text-[9px] font-black uppercase tracking-widest mt-2">Nowy Zasób Systemowy</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsAddModalOpen(false)} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
+             </div>
+             <form onSubmit={handleAddTool} className="p-8 sm:p-12 space-y-8 sm:space-y-12 overflow-y-auto no-scrollbar">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
+                   <div className="space-y-8">
+                      <div className="space-y-4">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nazwa Narzędzia</label>
+                         <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY BETA" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-6">
+                         <div className="space-y-4">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nr Seryjny</label>
+                            <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                         </div>
+                         <div className="space-y-4">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Oddział</label>
+                            <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none appearance-none cursor-pointer">
+                              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+                            </select>
+                         </div>
+                      </div>
+                   </div>
+                   
+                   <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic">Zdjęcie Poglądowe</label>
+                      <label className="w-full h-64 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center cursor-pointer hover:border-[#22c55e] transition-all overflow-hidden group shadow-inner relative">
+                        {newPhotoPreview ? (
+                          <img src={newPhotoPreview} className="w-full h-full object-cover" alt="Preview" />
+                        ) : (
+                          <>
+                            <Camera size={48} className="text-slate-200 group-hover:scale-110 transition-transform mb-4" />
+                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Wgraj zdjęcie narzędzia</p>
+                          </>
+                        )}
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setNewPhoto(file);
+                            setNewPhotoPreview(URL.createObjectURL(file));
+                          }
+                        }} />
+                      </label>
+                   </div>
+                </div>
+
+                <div className="space-y-4">
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Instrukcja / Opis Przeznaczenia</label>
+                   <textarea rows={3} value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Opisz przeznaczenie narzędzia lub uwagi techniczne..." className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
+                </div>
+
+                <button type="submit" disabled={isSubmitting} className="w-full py-6 sm:py-8 bg-[#22c55e] text-white rounded-[2rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-4 active:scale-95 transition-all">
+                  {isSubmitting ? <Loader className="animate-spin" size={24}/> : <Save size={24}/>}
+                  <span>Zapisz w Bazie Danych</span>
+                </button>
+             </form>
           </div>
         </div>
       )}
@@ -450,14 +474,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom }: any) => {
   const isMechanic = user.role === 'MECHANIK';
   
-  // Czy narzędzie fizycznie znajduje się w aktualnie przeglądanym/wybranym oddziale?
   const isPhysicallyHere = Number(tool.branch_id) === effectiveBranchId;
-  
-  // Czy narzędzie JEST W DRODZE DO aktualnie wybranego oddziału?
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === effectiveBranchId;
 
   return (
-    <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isHeadingToThisBranch ? 'bg-blue-50/30' : ''}`}>
+    <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isHeadingToThisBranch ? 'bg-blue-50/50 ring-4 ring-blue-500/20 shadow-[inset_0_0_20px_rgba(37,99,235,0.1)]' : ''}`}>
       <td className="px-12 py-8">
         <div className="flex items-center space-x-8">
           <div 
@@ -479,7 +500,7 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
          </div>
       </td>
       <td className="px-12 py-8">
-         <div className={`flex items-center space-x-3 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : tool.status === ToolStatus.IN_TRANSIT ? 'text-blue-500 animate-pulse' : 'text-rose-500'}`}>
+         <div className={`flex items-center space-x-3 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : tool.status === ToolStatus.IN_TRANSIT ? 'text-blue-500 animate-pulse font-black' : 'text-rose-500'}`}>
             <span className={`w-2 h-2 rounded-full bg-current ${tool.status !== ToolStatus.FREE ? 'animate-pulse' : ''}`}></span>
             <span className="text-[10px] font-black uppercase tracking-widest italic">{tool.status}</span>
          </div>
