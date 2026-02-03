@@ -5,7 +5,7 @@ import {
   MapPin, X, Save, Loader, ZoomIn, History, ArrowRightLeft, 
   Clock, Edit2, PackageCheck, Send, Info, Settings, Building2, 
   ChevronLeft, ChevronRight, MapPinned, Archive, Camera, ArrowRight, ShieldAlert,
-  Hammer, BookmarkPlus, ShoppingBag, Eye
+  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud
 } from 'lucide-react';
 import { Tool, ToolStatus, User, Branch, ToolLog } from '../types';
 import Lightbox from '../components/Lightbox';
@@ -49,6 +49,8 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [newSerialNumber, setNewSerialNumber] = useState('');
   const [newBranchId, setNewBranchId] = useState('1');
   const [newDescription, setNewDescription] = useState('');
+  const [newPhoto, setNewPhoto] = useState<File | null>(null);
+  const [newPhotoPreview, setNewPhotoPreview] = useState<string | null>(null);
 
   // LOGIKA RÓL (RBAC) - ABSOLUTNA
   const isAdmin = user.role === 'ADMINISTRATOR';
@@ -74,6 +76,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const effectiveBranchId = useMemo(() => {
     return simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId);
   }, [simulationBranchId, user.branch_id]);
+
+  const getToolImageUrl = (path: string | null | undefined) => {
+    if (!path) return `${SUPABASE_URL}/storage/v1/object/public/tool-photos/placeholder.jpg`;
+    if (path.startsWith('http')) return path;
+    return `${SUPABASE_URL}/storage/v1/object/public/tool-photos/${path}`;
+  };
 
   const fetchTools = useCallback(async (isLoadMore = false) => {
     if (!isLoadMore) {
@@ -138,12 +146,22 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     if (!newName || !newSerialNumber) return alert("Wypełnij wymagane pola!");
     setIsSubmitting(true);
     try {
+      let photo_path = null;
+
+      if (newPhoto) {
+        const fileName = `tool_${Date.now()}_${newSerialNumber}.jpg`;
+        const { error: uploadError } = await supabase.storage.from('tool-photos').upload(fileName, newPhoto);
+        if (uploadError) throw uploadError;
+        photo_path = fileName;
+      }
+
       const { data: tool, error } = await supabase.from('tools').insert([{
         name: newName,
         serial_number: newSerialNumber,
         branch_id: Number(newBranchId),
         status: ToolStatus.FREE,
         description: newDescription,
+        photo_path,
         category: 'NARZĘDZIA WARSZTATOWE'
       }]).select().single();
 
@@ -162,6 +180,8 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       setNewName('');
       setNewSerialNumber('');
       setNewDescription('');
+      setNewPhoto(null);
+      setNewPhotoPreview(null);
       onRefresh();
     } catch (e: any) {
       alert(e.message);
@@ -229,12 +249,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); setIsDeleting(false); }
   };
 
-  const getToolImageUrl = (path: string | null | undefined) => {
-    if (!path) return `${SUPABASE_URL}/storage/v1/object/public/tool-photos/placeholder.jpg`;
-    if (path.startsWith('http')) return path;
-    return `${SUPABASE_URL}/storage/v1/object/public/tool-photos/${path}`;
-  };
-
   return (
     <div className="p-4 sm:p-8 lg:p-14 space-y-8 sm:space-y-12 pb-40 animate-in fade-in duration-700">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
@@ -282,7 +296,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
             </thead>
             <tbody className="divide-y-2 divide-slate-50">
               {tools.map(tool => (
-                <ToolRow key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} />
+                <ToolRow key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} onZoom={setLightboxImage} />
               ))}
             </tbody>
           </table>
@@ -299,41 +313,68 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-3xl" onClick={() => setIsAddModalOpen(false)}></div>
-          <div className="relative w-full max-w-2xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500">
-             <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center border-b-8 border-[#22c55e]">
+          <div className="relative w-full max-w-4xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500 flex flex-col max-h-[95vh]">
+             <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center border-b-8 border-[#22c55e] shrink-0">
                 <div className="flex items-center space-x-6">
                   <div className="w-16 h-16 bg-[#22c55e] rounded-2xl flex items-center justify-center shadow-xl rotate-3"><Plus size={28}/></div>
                   <div>
-                    <h3 className="text-xl sm:text-3xl font-black uppercase italic italic leading-none">Dodaj Narzędzie</h3>
+                    <h3 className="text-xl sm:text-3xl font-black uppercase italic leading-none">Dodaj Narzędzie</h3>
                     <p className="text-[#22c55e] text-[9px] font-black uppercase tracking-widest mt-2">Nowy Zasób Systemowy</p>
                   </div>
                 </div>
                 <button onClick={() => setIsAddModalOpen(false)} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
              </div>
-             <form onSubmit={handleAddTool} className="p-8 sm:p-12 space-y-6 sm:space-y-10">
-                <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nazwa Narzędzia</label>
-                   <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY BETA" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
-                </div>
-                <div className="grid grid-cols-2 gap-6">
-                   <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nr Seryjny</label>
-                      <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+             <form onSubmit={handleAddTool} className="p-8 sm:p-12 space-y-8 sm:space-y-12 overflow-y-auto no-scrollbar">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
+                   <div className="space-y-8">
+                      <div className="space-y-4">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nazwa Narzędzia</label>
+                         <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY BETA" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-6">
+                         <div className="space-y-4">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nr Seryjny</label>
+                            <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                         </div>
+                         <div className="space-y-4">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Oddział</label>
+                            <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none appearance-none cursor-pointer">
+                              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+                            </select>
+                         </div>
+                      </div>
                    </div>
+                   
                    <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Oddział</label>
-                      <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none appearance-none cursor-pointer">
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-                      </select>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic">Zdjęcie Poglądowe</label>
+                      <label className="w-full h-64 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center cursor-pointer hover:border-[#22c55e] transition-all overflow-hidden group shadow-inner relative">
+                        {newPhotoPreview ? (
+                          <img src={newPhotoPreview} className="w-full h-full object-cover" alt="Preview" />
+                        ) : (
+                          <>
+                            <Camera size={48} className="text-slate-200 group-hover:scale-110 transition-transform mb-4" />
+                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Wgraj zdjęcie narzędzia</p>
+                          </>
+                        )}
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setNewPhoto(file);
+                            setNewPhotoPreview(URL.createObjectURL(file));
+                          }
+                        }} />
+                      </label>
                    </div>
                 </div>
+
                 <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Instrukcja / Opis</label>
-                   <textarea rows={3} value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Przeznaczenie narzędzia..." className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Instrukcja / Opis Przeznaczenia</label>
+                   <textarea rows={3} value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Opisz przeznaczenie narzędzia lub uwagi techniczne..." className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
                 </div>
+
                 <button type="submit" disabled={isSubmitting} className="w-full py-6 sm:py-8 bg-[#22c55e] text-white rounded-[2rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-4 active:scale-95 transition-all">
                   {isSubmitting ? <Loader className="animate-spin" size={24}/> : <Save size={24}/>}
-                  <span>Zapisz w Bazie</span>
+                  <span>Zapisz w Bazie Danych</span>
                 </button>
              </form>
           </div>
@@ -346,7 +387,10 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           <div className="relative w-full max-w-5xl bg-white rounded-t-[2.5rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500 flex flex-col max-h-[95vh] sm:max-h-[92vh]">
             <div className="bg-[#0f172a] p-6 sm:p-12 text-white flex justify-between items-center relative border-b-8 border-[#22c55e] shrink-0">
                <div className="flex items-center space-x-4 sm:space-x-10 relative z-10">
-                 <div className="w-16 h-16 sm:w-32 sm:h-32 bg-[#22c55e] rounded-[1.2rem] sm:rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl rotate-3 shrink-0"><Wrench size={28} className="sm:size-[56px]"/></div>
+                 <div className="w-16 h-16 sm:w-32 sm:h-32 bg-[#22c55e] rounded-[1.2rem] sm:rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl rotate-3 shrink-0 overflow-hidden">
+                    <img src={getToolImageUrl(selectedTool.photo_path)} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="" />
+                    <div className="absolute inset-0 flex items-center justify-center"><Wrench size={28} className="sm:size-[56px] text-white/50" /></div>
+                 </div>
                  <div className="min-w-0">
                    <h3 className="text-lg sm:text-4xl font-black uppercase tracking-tighter italic leading-none truncate">{selectedTool.name}</h3>
                    <p className="text-[#22c55e] text-[8px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] mt-2 sm:mt-4">{user.role}: {isMechanic ? 'PODGLĄD' : 'ZARZĄDZANIE'}</p>
@@ -421,10 +465,16 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                           {isAdmin ? (
                             <div className="space-y-6">
                               <textarea rows={6} value={toolDescription} onChange={e => setToolDescription(e.target.value)} placeholder="Opisz przeznaczenie narzędzia..." className="w-full p-6 sm:p-10 bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-bold uppercase outline-none focus:border-[#22c55e] shadow-inner"></textarea>
-                              <button onClick={handleSaveDescription} disabled={isSubmitting} className="w-full sm:w-auto px-10 py-5 bg-[#0f172a] text-[#22c55e] rounded-[1.5rem] sm:rounded-[2.5rem] font-black uppercase text-[10px] tracking-widest shadow-2xl flex items-center justify-center space-x-4 hover:bg-[#22c55e] hover:text-white transition-all border-b-6 border-black">
-                                 {isSubmitting ? <Loader className="animate-spin" size={18}/> : <Save size={18}/>}
-                                 <span>Zapisz Zmiany Dokumentacji</span>
-                              </button>
+                              <div className="flex flex-col sm:flex-row gap-6">
+                                <button onClick={handleSaveDescription} disabled={isSubmitting} className="w-full sm:w-auto px-10 py-5 bg-[#0f172a] text-[#22c55e] rounded-[1.5rem] sm:rounded-[2.5rem] font-black uppercase text-[10px] tracking-widest shadow-2xl flex items-center justify-center space-x-4 hover:bg-[#22c55e] hover:text-white transition-all border-b-6 border-black">
+                                   {isSubmitting ? <Loader className="animate-spin" size={18}/> : <Save size={18}/>}
+                                   <span>Zapisz Zmiany Dokumentacji</span>
+                                </button>
+                                <button onClick={() => setLightboxImage(getToolImageUrl(selectedTool.photo_path))} className="w-full sm:w-auto px-10 py-5 bg-slate-100 text-slate-500 rounded-[1.5rem] sm:rounded-[2.5rem] font-black uppercase text-[10px] tracking-widest flex items-center justify-center space-x-4 hover:bg-slate-200 transition-all">
+                                   <Camera size={18}/>
+                                   <span>Powiększ Zdjęcie</span>
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <div className="p-8 sm:p-12 bg-slate-50 rounded-[1.5rem] sm:rounded-[4rem] border-2 border-slate-100 italic min-h-[120px] shadow-inner flex items-center justify-center text-center">
@@ -463,7 +513,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   );
 };
 
-const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl }: any) => {
+const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom }: any) => {
   const isAdmin = user.role === 'ADMINISTRATOR';
   const isAdvisor = user.role === 'DORADCA SERWISOWY';
   const isMechanic = user.role === 'MECHANIK';
@@ -478,8 +528,12 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl }: a
     <tr className="group hover:bg-slate-50/50 transition-all duration-300">
       <td className="px-12 py-8">
         <div className="flex items-center space-x-8">
-          <div className="w-20 h-16 bg-slate-100 rounded-[1.2rem] overflow-hidden shadow-inner border border-slate-200">
-            <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover" alt="" />
+          <div 
+            className="w-20 h-16 bg-slate-100 rounded-[1.2rem] overflow-hidden shadow-inner border border-slate-200 cursor-zoom-in group/img relative"
+            onClick={(e) => { e.stopPropagation(); onZoom(getToolImageUrl(tool.photo_path)); }}
+          >
+            <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover group-hover/img:scale-110 transition-transform" alt="" />
+            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={16} className="text-white"/></div>
           </div>
           <div className="max-w-md">
             <p className="font-black text-[#0f172a] uppercase text-base tracking-tighter italic leading-none">{tool.name}</p>
