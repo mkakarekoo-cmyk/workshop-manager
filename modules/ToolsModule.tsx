@@ -37,6 +37,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [manageTab, setManageTab] = useState<'LOGISTYKA' | 'TIMELINE' | 'INFO'>('LOGISTYKA');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toolHistory, setToolHistory] = useState<ToolLog[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   
   const [transferBranchId, setTransferBranchId] = useState<string>('2');
   const [notes, setNotes] = useState('');
@@ -93,14 +94,9 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         .order('name', { ascending: true })
         .range(currentOffset, currentOffset + PAGE_SIZE - 1);
 
-      // LOGIKA FILTROWANIA:
-      // Baza Narzędzi -> Zawsze wszystko (globalnie)
-      // Moje Narzędzia -> Tylko aktualny oddział
       if (viewMode === 'MOJE NARZĘDZIA') {
         query = query.eq('branch_id', effectiveBranchId);
       } 
-      // Jeśli widok to Baza Narzędzi, a użytkownik nie jest adminem, 
-      // to mimo simulationBranchId pokazujemy WSZYSTKO (usunięto filtr branch_id)
 
       if (searchTerm) {
         query = query.or(`name.ilike.%${searchTerm}%,serial_number.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
@@ -133,6 +129,16 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     fetchHistory();
   }, [manageTab, selectedToolId]);
 
+  const handleDeleteTool = async (id: string) => {
+    try {
+      const { error } = await supabase.from('tools').delete().eq('id', id);
+      if (error) throw error;
+      alert("Narzędzie usunięte z bazy danych.");
+      setConfirmDeleteId(null);
+      onRefresh();
+    } catch (e: any) { alert(e.message); }
+  };
+
   const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE') => {
     if (!selectedTool) return;
     setIsSubmitting(true);
@@ -158,11 +164,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           operator_id: user.id
         });
         await supabase.from('tools').update({ status: ToolStatus.RESERVED }).eq('id', selectedTool.id);
-        alert("Rezerwacja zapisana. Narzędzie zostało zablokowane w grafiku.");
+        alert("Rezerwacja zapisana.");
       } 
       else if (action === 'MAINTENANCE') {
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd: ${notes}`, operator_id: user.id });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd/Serwis: ${notes}`, operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.MAINTENANCE }).eq('id', selectedTool.id);
+        alert("Narzędzie przekazane do konserwacji.");
       } 
       else if (action === 'TRANSFER') {
         await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
@@ -282,7 +289,18 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                    </td>
                 </tr>
               ) : tools.map(tool => (
-                <ToolRow key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} onZoom={setLightboxImage} />
+                <ToolRow 
+                  key={tool.id} 
+                  tool={tool} 
+                  effectiveBranchId={effectiveBranchId} 
+                  user={user} 
+                  onSelect={setSelectedToolId} 
+                  getToolImageUrl={getToolImageUrl} 
+                  onZoom={setLightboxImage} 
+                  onDelete={(id: string) => setConfirmDeleteId(id)}
+                  confirmDeleteId={confirmDeleteId}
+                  handleDeleteTool={handleDeleteTool}
+                />
               ))}
             </tbody>
           </table>
@@ -342,7 +360,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                                 {branches.filter(b => Number(b.id) !== Number(selectedTool.branch_id)).map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                             </select>
                             <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi logistyczne..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
-                            <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Send size={20}/> <span>WYŚLIJ</span></button>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                               <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Send size={20}/> <span>WYŚLIJ</span></button>
+                               <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-amber-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Wrench size={20}/> <span>SERWIS</span></button>
+                            </div>
                           </div>
                           
                           <div className="p-8 sm:p-12 bg-rose-50 rounded-[2rem] sm:rounded-[4rem] border-4 border-dashed border-rose-100 space-y-8">
@@ -467,10 +489,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   );
 };
 
-const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom }: any) => {
-  const isMechanic = user.role === 'MECHANIK';
+const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, confirmDeleteId, handleDeleteTool }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === effectiveBranchId;
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === effectiveBranchId;
+  const isAdmin = user.role === 'ADMINISTRATOR';
+  const isConfirming = confirmDeleteId === tool.id;
 
   return (
     <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isHeadingToThisBranch ? 'bg-blue-50/50 ring-4 ring-blue-500/20 shadow-[inset_0_0_20px_rgba(37,99,235,0.1)]' : ''}`}>
@@ -497,13 +520,34 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
          </div>
       </td>
       <td className="px-12 py-8 text-right">
-         <button onClick={() => onSelect(tool.id)} className={`px-8 py-4 text-white rounded-[1.5rem] text-[9px] font-black uppercase tracking-widest transition-all border-b-4 active:scale-95 ${
-           isHeadingToThisBranch ? 'bg-blue-600 border-blue-900 animate-bounce' : 
-           isPhysicallyHere ? 'bg-[#0f172a] border-black hover:bg-[#22c55e]' : 
-           'bg-rose-500 border-rose-800'
-         }`}>
-            {isHeadingToThisBranch ? 'ODBIERZ' : (isPhysicallyHere ? 'ZARZĄDZAJ' : 'REZERWUJ')}
-         </button>
+         <div className="flex items-center justify-end space-x-3">
+            {isAdmin && (
+              <div className="flex items-center">
+                 {isConfirming ? (
+                   <button 
+                     onClick={() => handleDeleteTool(tool.id)}
+                     className="px-6 py-4 bg-rose-600 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest animate-in zoom-in duration-200 shadow-lg"
+                   >
+                     TAK, USUŃ
+                   </button>
+                 ) : (
+                   <button 
+                    onClick={() => onDelete(tool.id)}
+                    className="p-4 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white rounded-[1.2rem] transition-all"
+                   >
+                    <Trash2 size={16}/>
+                   </button>
+                 )}
+              </div>
+            )}
+            <button onClick={() => onSelect(tool.id)} className={`px-8 py-4 text-white rounded-[1.5rem] text-[9px] font-black uppercase tracking-widest transition-all border-b-4 active:scale-95 ${
+              isHeadingToThisBranch ? 'bg-blue-600 border-blue-900 animate-bounce' : 
+              isPhysicallyHere ? 'bg-[#0f172a] border-black hover:bg-[#22c55e]' : 
+              'bg-rose-500 border-rose-800'
+            }`}>
+               {isHeadingToThisBranch ? 'ODBIERZ' : (isPhysicallyHere ? 'ZARZĄDZAJ' : 'REZERWUJ')}
+            </button>
+         </div>
       </td>
     </tr>
   );

@@ -75,15 +75,18 @@ const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refresh
     d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 
   const getReservationsForDay = (date: Date) => {
-    return reservations.filter(res => {
-      const start = new Date(res.start_date);
-      const end = new Date(res.end_date);
-      const current = new Date(date);
-      current.setHours(0,0,0,0);
-      start.setHours(0,0,0,0);
-      end.setHours(0,0,0,0);
-      return current >= start && current <= end;
-    });
+    return reservations
+      .filter(res => {
+        const start = new Date(res.start_date);
+        const end = new Date(res.end_date);
+        const current = new Date(date);
+        current.setHours(0,0,0,0);
+        start.setHours(0,0,0,0);
+        end.setHours(0,0,0,0);
+        return current >= start && current <= end;
+      })
+      // Sortowanie po ID jest kluczowe, aby rezerwacja zawsze wpadała w ten sam "slot" pionowy
+      .sort((a, b) => a.id.localeCompare(b.id));
   };
 
   const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
@@ -91,7 +94,6 @@ const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refresh
 
   return (
     <div className="min-h-screen bg-white animate-in fade-in duration-700">
-      {/* Header Kalendarza - Styl Google */}
       <div className="flex items-center justify-between px-10 py-8 border-b border-slate-100">
         <div className="flex items-center space-x-12">
           <div className="flex items-center space-x-4">
@@ -119,46 +121,58 @@ const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refresh
                 </div>
               ))}
            </div>
-           {/* Fixed: Added RefreshCw to lucide-react imports above */}
            <button onClick={fetchReservations} className="p-4 bg-slate-800 text-white rounded-2xl hover:bg-black transition-all shadow-xl">
              <RefreshCw size={18} className={loading ? 'animate-spin' : ''}/>
            </button>
         </div>
       </div>
 
-      {/* Grid Kalendarza */}
       <div className="grid grid-cols-7 border-b border-slate-100">
          {weekDays.map(day => (
            <div key={day} className="py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">{day}</div>
          ))}
       </div>
 
-      <div className="grid grid-cols-7 auto-rows-[160px] bg-slate-100 gap-[1px]">
+      <div className="grid grid-cols-7 auto-rows-[160px] bg-slate-100 gap-[1px] border-b border-slate-100">
          {calendarDays.map((item, idx) => {
            const dayReservations = getReservationsForDay(item.date);
            const isToday = isSameDay(item.date, new Date());
            
            return (
-             <div key={idx} className={`relative p-2 flex flex-col transition-all ${item.currentMonth ? 'bg-white' : 'bg-slate-50/50'}`}>
-                <div className="flex justify-between items-start mb-2">
+             <div key={idx} className={`relative p-0 flex flex-col transition-all overflow-hidden ${item.currentMonth ? 'bg-white' : 'bg-slate-50/50'}`}>
+                <div className="flex justify-between items-start p-2 mb-1">
                   <span className={`text-[12px] font-black p-2 rounded-full w-8 h-8 flex items-center justify-center ${isToday ? 'bg-[#22c55e] text-white shadow-lg' : item.currentMonth ? 'text-slate-800' : 'text-slate-300'}`}>
                     {item.day}
                   </span>
                 </div>
                 
-                <div className="space-y-1 overflow-y-auto no-scrollbar">
+                <div className="space-y-1 relative h-full">
                    {dayReservations.map((res) => {
                      const isStart = isSameDay(new Date(res.start_date), item.date);
+                     const isEnd = isSameDay(new Date(res.end_date), item.date);
+                     const isMonday = item.date.getDay() === 1; // 1 = Monday
+                     
+                     // Wyświetlamy tekst tylko w dniu startu LUB w każdy poniedziałek (jeśli event trwa dłużej)
+                     const showText = isStart || isMonday;
+                     
                      const branchColor = res.branch_id === 6 ? 'bg-amber-500' : res.branch_id === 1 ? 'bg-blue-600' : 'bg-[#22c55e]';
                      
                      return (
                        <div 
                          key={res.id} 
                          onClick={() => setSelectedRes(res)}
-                         className={`h-6 px-3 flex items-center text-[8px] font-black text-white uppercase tracking-tighter cursor-pointer rounded-md shadow-sm transform hover:scale-[1.02] transition-all ${branchColor} ${!isStart ? 'opacity-80' : ''}`}
+                         className={`h-6 flex items-center text-[8px] font-black text-white uppercase tracking-tighter cursor-pointer transition-all hover:brightness-110 shadow-sm
+                           ${branchColor} 
+                           ${isStart ? 'rounded-l-md ml-1' : 'ml-0'} 
+                           ${isEnd ? 'rounded-r-md mr-1' : 'mr-0'}
+                         `}
                        >
-                         {isStart && <Wrench size={10} className="mr-2 shrink-0"/>}
-                         <span className="truncate">{res.tool?.name}</span>
+                         {showText && (
+                           <div className="flex items-center px-2 truncate">
+                             {isStart && <Wrench size={10} className="mr-2 shrink-0"/>}
+                             <span className="truncate">{res.tool?.name} ({res.branch?.name})</span>
+                           </div>
+                         )}
                        </div>
                      );
                    })}
@@ -168,7 +182,6 @@ const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refresh
          })}
       </div>
 
-      {/* Modal Szczegółów */}
       {selectedRes && (
         <div className="fixed inset-0 z-[6000] flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setSelectedRes(null)}></div>
