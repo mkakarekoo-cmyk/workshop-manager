@@ -3,7 +3,8 @@ export enum ToolStatus {
   IN_TRANSIT = 'W DRODZE',
   OCCUPIED = 'ZAJĘTE',
   MAINTENANCE = 'KONSERWACJA',
-  FREE = 'WOLNE'
+  FREE = 'WOLNE',
+  RESERVED = 'ZAREZERWOWANE'
 }
 
 export interface Branch {
@@ -26,6 +27,19 @@ export interface Tool {
   last_maintenance?: string | null;
   current_branch?: { name: string };
   target_branch?: { name: string };
+}
+
+export interface ToolReservation {
+  id: string;
+  tool_id: string;
+  branch_id: number;
+  start_date: string;
+  end_date: string;
+  notes?: string;
+  created_at: string;
+  operator_id: string;
+  tool?: { name: string };
+  branch?: { name: string };
 }
 
 export interface ToolLog {
@@ -67,7 +81,7 @@ export interface AppNotification {
   is_read: boolean;
 }
 
-// Added missing types for Fleet and Workshop modules to fix import errors
+// Add missing interfaces for Fleet and Workshop modules
 export interface Vehicle {
   id: string;
   plate_number: string;
@@ -76,20 +90,12 @@ export interface Vehicle {
   status: 'AKTYWNY' | 'SERWIS' | 'WOLNY';
 }
 
-export interface VanInventoryItem {
-  id: string;
-  drawer_id: string;
-  lp: number;
-  name: string;
-  szt: number;
-}
-
 export interface VanDrawerWithItems {
   id: string;
   van_id: string;
   name: string;
-  image_url: string | null;
-  items: VanInventoryItem[];
+  image_url?: string | null;
+  items: any[];
 }
 
 export interface WorkshopStation {
@@ -101,18 +107,10 @@ export interface WorkshopStation {
   photo_path?: string | null;
 }
 
-export interface WorkshopInventoryItem {
-  id: string;
-  drawer_id: string;
-  lp: number;
-  name: string;
-  szt: number;
-}
-
 export interface WorkshopDrawerWithItems {
   id: string;
   station_id: string;
   name: string;
-  image_url: string | null;
-  items: WorkshopInventoryItem[];
+  image_url?: string | null;
+  items: any[];
 }

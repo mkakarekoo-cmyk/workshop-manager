@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import ToolsModule from './modules/ToolsModule';
 import UsersModule from './modules/UsersModule';
+import ScheduleModule from './modules/ScheduleModule';
 import { User, ModuleType, Branch, AppNotification, ToolStatus } from './types';
 import { supabase } from './supabase';
 
@@ -14,9 +15,11 @@ const MOCK_BRANCHES: Branch[] = [
   { id: '3', name: 'Łomża', location: 'Łomża' },
   { id: '4', name: 'Brzozów', location: 'Brzozów' },
   { id: '5', name: 'Suwałki', location: 'Suwałki' },
+  { id: '6', name: 'Serwis Porosły', location: 'Porosły' },
 ];
 
 const MASTER_ADMIN_EMAIL = 'm.kakarekoo@gmail.com';
+const SPECIAL_USER_ADAM = 'adam.wnorowski@contractus.com.pl';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -43,15 +46,23 @@ const App: React.FC = () => {
     try {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
       
-      const userEmail = email || '';
-      const finalRole = userEmail.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase() ? 'ADMINISTRATOR' : (profile?.role || 'MECHANIK');
+      const userEmail = (email || '').toLowerCase();
+      let finalRole = profile?.role || 'MECHANIK';
+      let finalBranch = profile?.branch_id ? String(profile.branch_id) : '1';
+
+      if (userEmail === MASTER_ADMIN_EMAIL.toLowerCase()) {
+        finalRole = 'ADMINISTRATOR';
+      } else if (userEmail === SPECIAL_USER_ADAM.toLowerCase()) {
+        finalRole = 'DORADCA SERWISOWY';
+        finalBranch = '6'; // Serwis Porosły
+      }
 
       const finalUser: User = {
         id: userId,
         email: userEmail,
         role: finalRole as any,
         status: profile?.status || 'AKTYWNY',
-        branch_id: profile?.branch_id ? String(profile.branch_id) : '1',
+        branch_id: finalBranch,
         first_name: profile?.first_name,
         last_name: profile?.last_name
       };
@@ -112,6 +123,11 @@ const App: React.FC = () => {
               type = 'INFO';
             }
           } 
+          else if (log.action === 'REZERWACJA') {
+            title = 'NOWA REZERWACJA';
+            message = `Oddział ${log.to_branch?.name} zarezerwował narzędzie: ${log.tool?.name}`;
+            type = 'WARNING';
+          }
           else if (log.action === 'ZAMÓWIENIE') {
             title = 'NOWE ZAMÓWIENIE';
             message = `Oddział ${log.to_branch?.name} prosi o: ${log.tool?.name}`;
@@ -214,7 +230,7 @@ const App: React.FC = () => {
         />
         <main className="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
           <div className="max-w-[1920px] mx-auto">
-             {activeModule !== 'UŻYTKOWNICY' && (
+             {activeModule === 'BAZA NARZĘDZI' || activeModule === 'MOJE NARZĘDZIA' ? (
                <ToolsModule 
                   user={user} 
                   simulationBranchId={simulationBranchId} 
@@ -223,7 +239,7 @@ const App: React.FC = () => {
                   onRefresh={onRefresh} 
                   viewMode={activeModule as any} 
                />
-             )}
+             ) : null}
              {activeModule === 'UŻYTKOWNICY' && (
                <UsersModule 
                 user={user} 
@@ -233,10 +249,17 @@ const App: React.FC = () => {
                 refreshTrigger={refreshTrigger} 
                />
              )}
+             {activeModule === 'GRAFIK' && (
+               <ScheduleModule 
+                 user={user}
+                 branches={MOCK_BRANCHES}
+                 refreshTrigger={refreshTrigger}
+               />
+             )}
           </div>
           <footer className="w-full py-24 flex flex-col items-center justify-center space-y-6 mt-20 border-t border-slate-100 bg-white/50 backdrop-blur-sm">
             <p className="text-slate-300 text-[10px] font-black uppercase tracking-[1em] leading-none">
-              © 2026 Menadżer Narzędzi - System Logistyczny (KROK 1.6)
+              © 2026 Menadżer Narzędzi - System Logistyczny (KROK 1.8)
             </p>
             <div className="flex items-center space-x-6">
               <div className="h-[1px] w-16 bg-slate-100"></div>

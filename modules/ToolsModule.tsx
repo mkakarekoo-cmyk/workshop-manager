@@ -5,7 +5,7 @@ import {
   MapPin, X, Save, Loader, ZoomIn, History, ArrowRightLeft, 
   Clock, Edit2, PackageCheck, Send, Info, Settings, Building2, 
   ChevronLeft, ChevronRight, MapPinned, Archive, Camera, ArrowRight, ShieldAlert,
-  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud
+  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar
 } from 'lucide-react';
 import { Tool, ToolStatus, User, Branch, ToolLog } from '../types';
 import Lightbox from '../components/Lightbox';
@@ -40,8 +40,10 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   
   const [transferBranchId, setTransferBranchId] = useState<string>('2');
   const [notes, setNotes] = useState('');
-  const [toolDescription, setToolDescription] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
+  
+  // REZERWACJA STATE
+  const [resStartDate, setResStartDate] = useState('');
+  const [resEndDate, setResEndDate] = useState('');
 
   // NOWE NARZĘDZIE STATE
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -52,13 +54,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [newPhotoPreview, setNewPhotoPreview] = useState<string | null>(null);
 
-  // LOGIKA RÓL
   const isAdmin = user.role === 'ADMINISTRATOR';
   const isMechanic = user.role === 'MECHANIK';
 
   const selectedTool = useMemo(() => tools.find(t => t.id === selectedToolId), [tools, selectedToolId]);
 
-  // effectiveBranchId musi być nadrzędny nad user.branch_id
   const effectiveBranchId = useMemo(() => {
     if (simulationBranchId === 'all') return Number(user.branch_id);
     return Number(simulationBranchId);
@@ -70,13 +70,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       else setManageTab('LOGISTYKA');
     }
   }, [selectedToolId, isMechanic]);
-
-  useEffect(() => {
-    if (selectedTool) {
-      setToolDescription(selectedTool.description || '');
-      setIsDeleting(false);
-    }
-  }, [selectedTool]);
 
   const getToolImageUrl = (path: string | null | undefined) => {
     if (!path) return `${SUPABASE_URL}/storage/v1/object/public/tool-photos/placeholder.jpg`;
@@ -100,12 +93,9 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         .order('name', { ascending: true })
         .range(currentOffset, currentOffset + PAGE_SIZE - 1);
 
-      // RYGORYSTYCZNE FILTROWANIE DLA WIDOKU 'MOJE NARZĘDZIA'
       if (viewMode === 'MOJE NARZĘDZIA') {
-        // Filtracja musi nastąpić na poziomie bazy danych
         query = query.eq('branch_id', effectiveBranchId);
       } else if (simulationBranchId !== 'all') {
-        // Jeśli nie jesteśmy w globalnej bazie, zawsze filtrujemy po oddziale
         query = query.eq('branch_id', effectiveBranchId);
       }
 
@@ -119,12 +109,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         setTools(prev => isLoadMore ? [...prev, ...data] : data);
         if (isLoadMore) setOffset(currentOffset);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoading(false); setLoadingMore(false); }
   }, [viewMode, simulationBranchId, searchTerm, effectiveBranchId, offset]);
 
   useEffect(() => {
@@ -144,6 +129,69 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     };
     fetchHistory();
   }, [manageTab, selectedToolId]);
+
+  const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE') => {
+    if (!selectedTool) return;
+    setIsSubmitting(true);
+    try {
+      const targetId = effectiveBranchId;
+
+      if (action === 'RESERVE') {
+        if (!resStartDate || !resEndDate) throw new Error("Wybierz zakres dat!");
+        
+        // 1. Zapis rezerwacji w tabeli
+        await supabase.from('tool_reservations').insert({
+           tool_id: selectedTool.id,
+           branch_id: targetId,
+           start_date: resStartDate,
+           end_date: resEndDate,
+           notes: notes || 'Rezerwacja terminowa',
+           operator_id: user.id
+        });
+        
+        // 2. Log systemowy - powiadomienie dla właściciela
+        await supabase.from('tool_logs').insert({
+          tool_id: selectedTool.id,
+          action: 'REZERWACJA',
+          from_branch_id: selectedTool.branch_id,
+          to_branch_id: targetId,
+          notes: `Rezerwacja od ${resStartDate} do ${resEndDate}. ${notes}`,
+          operator_id: user.id
+        });
+        
+        // 3. BLOKADA: Zmiana statusu narzędzia na ZAREZERWOWANE
+        await supabase.from('tools').update({ 
+          status: ToolStatus.RESERVED 
+        }).eq('id', selectedTool.id);
+
+        alert("Rezerwacja zapisana. Narzędzie zostało zablokowane w grafiku.");
+      } 
+      else if (action === 'MAINTENANCE') {
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd: ${notes}`, operator_id: user.id });
+        await supabase.from('tools').update({ status: ToolStatus.MAINTENANCE }).eq('id', selectedTool.id);
+      } 
+      else if (action === 'TRANSFER') {
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
+        await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
+      } 
+      else if (action === 'RECEIPT') {
+        const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
+        await supabase.from('tools').update({ status: newStatus, branch_id: targetId, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: targetId, notes: `Przyjęto fizycznie w bazie oddziału.`, operator_id: user.id });
+        alert("Narzędzie przyjęte na stan.");
+      } 
+      else if (action === 'ORDER') {
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Potrzeba oddziału', operator_id: user.id });
+        alert("Zgłoszono zapotrzebowanie.");
+      }
+
+      onRefresh();
+      setSelectedToolId(null);
+      setNotes('');
+      setResStartDate('');
+      setResEndDate('');
+    } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  };
 
   const handleAddTool = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,36 +228,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
       alert("Zasób dodany.");
       setIsAddModalOpen(false);
-      setNewName(''); setNewSerialNumber(''); setNewDescription(''); setNewPhoto(null); setNewPhotoPreview(null);
       onRefresh();
-    } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
-  };
-
-  const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE') => {
-    if (!selectedTool) return;
-    setIsSubmitting(true);
-    try {
-      const targetId = effectiveBranchId;
-
-      if (action === 'MAINTENANCE') {
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd: ${notes}`, operator_id: user.id });
-        await supabase.from('tools').update({ status: ToolStatus.MAINTENANCE }).eq('id', selectedTool.id);
-      } else if (action === 'TRANSFER') {
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
-        await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
-      } else if (action === 'RECEIPT') {
-        const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
-        await supabase.from('tools').update({ status: newStatus, branch_id: targetId, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: targetId, notes: `Przyjęto fizycznie w bazie oddziału.`, operator_id: user.id });
-        alert("Narzędzie przyjęte na stan.");
-      } else if (action === 'ORDER') {
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Potrzeba oddziału', operator_id: user.id });
-        alert("Zgłoszono zapotrzebowanie.");
-      }
-
-      onRefresh();
-      setSelectedToolId(null);
-      setNotes('');
     } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 
@@ -271,15 +290,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                    </td>
                 </tr>
               ) : tools.map(tool => (
-                <ToolRow 
-                  key={tool.id} 
-                  tool={tool} 
-                  effectiveBranchId={effectiveBranchId} 
-                  user={user} 
-                  onSelect={setSelectedToolId} 
-                  getToolImageUrl={getToolImageUrl} 
-                  onZoom={setLightboxImage} 
-                />
+                <ToolRow key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} onZoom={setLightboxImage} />
               ))}
             </tbody>
           </table>
@@ -287,14 +298,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
         <div className="lg:hidden p-4 space-y-4">
            {tools.map(tool => (
-             <ToolCard 
-                key={tool.id} 
-                tool={tool} 
-                effectiveBranchId={effectiveBranchId} 
-                user={user} 
-                onSelect={setSelectedToolId} 
-                getToolImageUrl={getToolImageUrl} 
-             />
+             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} />
            ))}
         </div>
       </div>
@@ -307,11 +311,10 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                <div className="flex items-center space-x-4 sm:space-x-10 relative z-10">
                  <div className="w-16 h-16 sm:w-32 sm:h-32 bg-[#22c55e] rounded-[1.2rem] sm:rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl rotate-3 shrink-0 overflow-hidden">
                     <img src={getToolImageUrl(selectedTool.photo_path)} className="w-full h-full object-cover opacity-80" alt="" />
-                    <div className="absolute inset-0 flex items-center justify-center"><Wrench size={28} className="sm:size-[56px] text-white/50" /></div>
                  </div>
                  <div className="min-w-0">
                    <h3 className="text-lg sm:text-4xl font-black uppercase tracking-tighter italic leading-none truncate">{selectedTool.name}</h3>
-                   <p className="text-[#22c55e] text-[8px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] mt-2 sm:mt-4">LOGISTYKA ODDZIAŁOWA</p>
+                   <p className="text-[#22c55e] text-[8px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] mt-2 sm:mt-4">LOGISTYKA I GRAFIK</p>
                  </div>
                </div>
                <button onClick={() => setSelectedToolId(null)} className="p-3 sm:p-6 bg-white/10 rounded-full hover:bg-white/20 transition-all shrink-0"><X size={20} className="sm:size-8" /></button>
@@ -339,29 +342,36 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                                <span>ZATWIERDŹ PRZYJĘCIE</span>
                             </button>
                          </div>
-                      ) : (Number(selectedTool.branch_id) === effectiveBranchId || isAdmin) ? (
+                      ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
                           <div className="space-y-6 sm:space-y-10">
-                            <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">WYŚLIJ DO INNEGO ODDZIAŁU</label>
+                            <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">PRZESUNIĘCIE MIĘDZY ODDZIAŁAMI</label>
                             <select value={transferBranchId} onChange={e => setTransferBranchId(e.target.value)} className="w-full px-6 py-4 sm:px-10 sm:py-7 bg-slate-50 border border-slate-200 rounded-[1.2rem] sm:rounded-[3rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]">
                                 {branches.filter(b => Number(b.id) !== Number(selectedTool.branch_id)).map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                             </select>
-                            <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi transportowe..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
-                            <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3"><Send size={20}/> <span>WYSYŁKA</span></button>
+                            <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi logistyczne..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
+                            <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Send size={20}/> <span>WYŚLIJ</span></button>
                           </div>
-                          <div className="flex flex-col justify-center p-8 sm:p-14 bg-amber-50/50 rounded-[2rem] sm:rounded-[5rem] border-4 border-dashed border-amber-200 text-center space-y-6 sm:space-y-10">
-                             <Hammer size={32} className="mx-auto text-amber-500 animate-pulse"/>
-                             <h4 className="text-xl sm:text-3xl font-black text-[#0f172a] uppercase italic">SERWIS / PRZEGLĄD</h4>
-                             <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase border-b-8 border-amber-800">WYŁĄCZ Z UŻYTKU</button>
+                          
+                          <div className="p-8 sm:p-12 bg-rose-50 rounded-[2rem] sm:rounded-[4rem] border-4 border-dashed border-rose-100 space-y-8">
+                             <div className="flex items-center space-x-4">
+                               <Calendar className="text-rose-500" size={24}/>
+                               <h4 className="text-xl font-black text-rose-900 uppercase italic">REZERWACJA TERMINOWA</h4>
+                             </div>
+                             <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-2">
+                                 <label className="text-[9px] font-black text-rose-300 uppercase ml-2">DATA OD</label>
+                                 <input type="date" value={resStartDate} onChange={e => setResStartDate(e.target.value)} className="w-full p-4 bg-white border border-rose-100 rounded-2xl text-xs font-black uppercase outline-none focus:border-rose-500"/>
+                               </div>
+                               <div className="space-y-2">
+                                 <label className="text-[9px] font-black text-rose-300 uppercase ml-2">DATA DO</label>
+                                 <input type="date" value={resEndDate} onChange={e => setResEndDate(e.target.value)} className="w-full p-4 bg-white border border-rose-100 rounded-2xl text-xs font-black uppercase outline-none focus:border-rose-500"/>
+                               </div>
+                             </div>
+                             <button onClick={() => handleLogisticsAction('RESERVE')} disabled={isSubmitting} className="w-full py-6 bg-rose-500 text-white rounded-[1.5rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-xl border-b-6 border-rose-800 flex items-center justify-center space-x-4 transition-all active:scale-95">
+                                <BookmarkPlus size={20}/> <span>ZAREZERWUJ W GRAFIKU</span>
+                             </button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className={`flex flex-col items-center p-8 sm:p-14 rounded-[2rem] sm:rounded-[5rem] border-4 border-dashed text-center space-y-6 sm:space-y-10 ${selectedTool.status === ToolStatus.OCCUPIED ? 'bg-rose-50 border-rose-200' : 'bg-amber-50/50 border-amber-200'}`}>
-                            {selectedTool.status === ToolStatus.OCCUPIED ? <BookmarkPlus size={40} className="text-rose-500 animate-pulse"/> : <ShoppingBag size={40} className="text-amber-500"/>}
-                            <h4 className="text-xl sm:text-4xl font-black text-[#0f172a] uppercase italic leading-none">{selectedTool.status === ToolStatus.OCCUPIED ? 'ZAREZERWUJ' : 'ZAMÓW DO SIEBIE'}</h4>
-                            <button onClick={() => handleLogisticsAction('ORDER')} disabled={isSubmitting} className={`w-full py-6 sm:py-10 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 ${selectedTool.status === ToolStatus.OCCUPIED ? 'bg-rose-500 border-rose-800' : 'bg-amber-500 border-amber-800'}`}>
-                               {selectedTool.status === ToolStatus.OCCUPIED ? 'POTWIERDŹ REZERWACJĘ' : 'WYŚLIJ ZAPOTRZEBOWANIE'}
-                            </button>
                         </div>
                       )}
                     </div>
@@ -451,12 +461,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                       </label>
                    </div>
                 </div>
-
-                <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Instrukcja / Opis Przeznaczenia</label>
-                   <textarea rows={3} value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Opisz przeznaczenie narzędzia lub uwagi techniczne..." className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
-                </div>
-
                 <button type="submit" disabled={isSubmitting} className="w-full py-6 sm:py-8 bg-[#22c55e] text-white rounded-[2rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-4 active:scale-95 transition-all">
                   {isSubmitting ? <Loader className="animate-spin" size={24}/> : <Save size={24}/>}
                   <span>Zapisz w Bazie Danych</span>
@@ -473,7 +477,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
 const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom }: any) => {
   const isMechanic = user.role === 'MECHANIK';
-  
   const isPhysicallyHere = Number(tool.branch_id) === effectiveBranchId;
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === effectiveBranchId;
 
@@ -481,12 +484,8 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
     <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isHeadingToThisBranch ? 'bg-blue-50/50 ring-4 ring-blue-500/20 shadow-[inset_0_0_20px_rgba(37,99,235,0.1)]' : ''}`}>
       <td className="px-12 py-8">
         <div className="flex items-center space-x-8">
-          <div 
-            className="w-20 h-16 bg-slate-100 rounded-[1.2rem] overflow-hidden shadow-inner border border-slate-200 cursor-zoom-in group/img relative"
-            onClick={(e) => { e.stopPropagation(); onZoom(getToolImageUrl(tool.photo_path)); }}
-          >
+          <div className="w-20 h-16 bg-slate-100 rounded-[1.2rem] overflow-hidden shadow-inner border border-slate-200 cursor-zoom-in group/img relative" onClick={(e) => { e.stopPropagation(); onZoom(getToolImageUrl(tool.photo_path)); }}>
             <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover group-hover/img:scale-110 transition-transform" alt="" />
-            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={16} className="text-white"/></div>
           </div>
           <div className="max-w-md">
             <p className="font-black text-[#0f172a] uppercase text-base tracking-tighter italic leading-none">{tool.name}</p>
@@ -500,23 +499,18 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
          </div>
       </td>
       <td className="px-12 py-8">
-         <div className={`flex items-center space-x-3 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : tool.status === ToolStatus.IN_TRANSIT ? 'text-blue-500 animate-pulse font-black' : 'text-rose-500'}`}>
+         <div className={`flex items-center space-x-3 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : tool.status === ToolStatus.IN_TRANSIT ? 'text-blue-500 animate-pulse font-black' : tool.status === ToolStatus.RESERVED ? 'text-rose-500 font-black' : 'text-slate-400'}`}>
             <span className={`w-2 h-2 rounded-full bg-current ${tool.status !== ToolStatus.FREE ? 'animate-pulse' : ''}`}></span>
             <span className="text-[10px] font-black uppercase tracking-widest italic">{tool.status}</span>
          </div>
       </td>
       <td className="px-12 py-8 text-right">
          <button onClick={() => onSelect(tool.id)} className={`px-8 py-4 text-white rounded-[1.5rem] text-[9px] font-black uppercase tracking-widest transition-all border-b-4 active:scale-95 ${
-           isMechanic ? 'bg-slate-400 border-slate-600' : 
            isHeadingToThisBranch ? 'bg-blue-600 border-blue-900 animate-bounce' : 
            isPhysicallyHere ? 'bg-[#0f172a] border-black hover:bg-[#22c55e]' : 
            'bg-rose-500 border-rose-800'
          }`}>
-            {isMechanic ? (
-                <span className="flex items-center space-x-2"><Eye size={12}/> <span>PODGLĄD</span></span>
-            ) : (
-                isHeadingToThisBranch ? 'ODBIERZ' : (isPhysicallyHere ? 'ZARZĄDZAJ' : (tool.status === ToolStatus.OCCUPIED ? 'REZERWACJA' : 'ZAMÓW'))
-            )}
+            {isHeadingToThisBranch ? 'ODBIERZ' : (isPhysicallyHere ? 'ZARZĄDZAJ' : 'REZERWUJ')}
          </button>
       </td>
     </tr>
@@ -524,10 +518,8 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
 };
 
 const ToolCard = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl }: any) => {
-  const isMechanic = user.role === 'MECHANIK';
   const isPhysicallyHere = Number(tool.branch_id) === effectiveBranchId;
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === effectiveBranchId;
-
   return (
     <div className={`bg-white p-5 rounded-[1.5rem] border shadow-lg flex flex-col space-y-4 ${isHeadingToThisBranch ? 'border-blue-500 ring-4 ring-blue-50' : 'border-slate-100'}`}>
       <div className="flex items-center space-x-4">
@@ -536,18 +528,10 @@ const ToolCard = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl }: 
         </div>
         <div className="min-w-0 flex-1">
           <h4 className="text-sm font-black uppercase italic tracking-tighter text-[#0f172a] truncate">{tool.name}</h4>
-          <div className="flex items-center space-x-2 mt-1">
-             <div className={`w-2 h-2 rounded-full ${tool.status === ToolStatus.FREE ? 'bg-[#22c55e]' : tool.status === ToolStatus.IN_TRANSIT ? 'bg-blue-500 animate-pulse' : 'bg-rose-500'}`}></div>
-             <p className="text-[8px] font-black uppercase text-slate-400 italic">{tool.status} • {tool.current_branch?.name}</p>
-          </div>
+          <p className="text-[8px] font-black uppercase text-slate-400 italic">{tool.status} • {tool.current_branch?.name}</p>
         </div>
       </div>
-      <button onClick={() => onSelect(tool.id)} className={`w-full py-4 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 ${
-        isMechanic ? 'bg-slate-400 border-slate-600' : 
-        isHeadingToThisBranch ? 'bg-blue-600 border-blue-900' : 
-        isPhysicallyHere ? 'bg-[#0f172a] border-black' : 
-        'bg-rose-500 border-rose-800'
-      }`}>
+      <button onClick={() => onSelect(tool.id)} className={`w-full py-4 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 ${isHeadingToThisBranch ? 'bg-blue-600 border-blue-900' : isPhysicallyHere ? 'bg-[#0f172a] border-black' : 'bg-rose-500 border-rose-800'}`}>
         {isHeadingToThisBranch ? 'ODBIERZ' : 'SZCZEGÓŁY'}
       </button>
     </div>
