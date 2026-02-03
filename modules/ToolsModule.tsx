@@ -93,11 +93,14 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         .order('name', { ascending: true })
         .range(currentOffset, currentOffset + PAGE_SIZE - 1);
 
+      // LOGIKA FILTROWANIA:
+      // Baza Narzędzi -> Zawsze wszystko (globalnie)
+      // Moje Narzędzia -> Tylko aktualny oddział
       if (viewMode === 'MOJE NARZĘDZIA') {
         query = query.eq('branch_id', effectiveBranchId);
-      } else if (simulationBranchId !== 'all') {
-        query = query.eq('branch_id', effectiveBranchId);
-      }
+      } 
+      // Jeśli widok to Baza Narzędzi, a użytkownik nie jest adminem, 
+      // to mimo simulationBranchId pokazujemy WSZYSTKO (usunięto filtr branch_id)
 
       if (searchTerm) {
         query = query.or(`name.ilike.%${searchTerm}%,serial_number.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
@@ -138,8 +141,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
       if (action === 'RESERVE') {
         if (!resStartDate || !resEndDate) throw new Error("Wybierz zakres dat!");
-        
-        // 1. Zapis rezerwacji w tabeli
         await supabase.from('tool_reservations').insert({
            tool_id: selectedTool.id,
            branch_id: targetId,
@@ -148,8 +149,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
            notes: notes || 'Rezerwacja terminowa',
            operator_id: user.id
         });
-        
-        // 2. Log systemowy - powiadomienie dla właściciela
         await supabase.from('tool_logs').insert({
           tool_id: selectedTool.id,
           action: 'REZERWACJA',
@@ -158,12 +157,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           notes: `Rezerwacja od ${resStartDate} do ${resEndDate}. ${notes}`,
           operator_id: user.id
         });
-        
-        // 3. BLOKADA: Zmiana statusu narzędzia na ZAREZERWOWANE
-        await supabase.from('tools').update({ 
-          status: ToolStatus.RESERVED 
-        }).eq('id', selectedTool.id);
-
+        await supabase.from('tools').update({ status: ToolStatus.RESERVED }).eq('id', selectedTool.id);
         alert("Rezerwacja zapisana. Narzędzie zostało zablokowane w grafiku.");
       } 
       else if (action === 'MAINTENANCE') {
@@ -205,7 +199,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         if (uploadError) throw uploadError;
         photo_path = fileName;
       }
-
       const { data: tool, error } = await supabase.from('tools').insert([{
         name: newName,
         serial_number: newSerialNumber,
@@ -215,9 +208,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         photo_path,
         category: 'NARZĘDZIA WARSZTATOWE'
       }]).select().single();
-
       if (error) throw error;
-
       await supabase.from('tool_logs').insert({
         tool_id: tool.id,
         action: 'PRZYJĘCIE',
@@ -225,7 +216,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         notes: 'Wprowadzono do zasobów centralnych',
         operator_id: user.id
       });
-
       alert("Zasób dodany.");
       setIsAddModalOpen(false);
       onRefresh();
@@ -249,7 +239,9 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                 <MapPinned size={16}/>
              </div>
              <p className="text-[#22c55e] text-[9px] sm:text-[11px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] italic">
-               {simulationBranchId === 'all' ? 'CENTRALNY WIDOK SYSTEMU' : `AKTYWNY ODDZIAŁ: ${branches.find(b => Number(b.id) === effectiveBranchId)?.name.toUpperCase()}`}
+               {viewMode === 'BAZA NARZĘDZI' 
+                 ? 'CENTRALNY WIDOK SYSTEMU (WSZYSTKIE ODDZIAŁY)' 
+                 : `AKTYWNY ODDZIAŁ: ${branches.find(b => Number(b.id) === effectiveBranchId)?.name.toUpperCase()}`}
              </p>
           </div>
         </div>
