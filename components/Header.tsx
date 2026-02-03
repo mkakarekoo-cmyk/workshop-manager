@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
-import { LogOut, Bell, Search, RefreshCw, X, Menu, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { User, ModuleType } from '../types';
+import React, { useState, useMemo } from 'react';
+import { LogOut, Bell, RefreshCw, X, Menu, Info, Settings, Key, Eye, EyeOff, Save, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
+import { User, ModuleType, AppNotification } from '../types';
+import { supabase } from '../supabase';
 
 interface HeaderProps {
   user: User;
@@ -9,101 +10,132 @@ interface HeaderProps {
   activeModule: ModuleType;
   toggleSidebar: () => void;
   onRefresh: () => void;
+  notifications: AppNotification[];
 }
 
-const MOCK_NOTIFICATIONS = [
-  { id: 1, type: 'SUCCESS', text: 'Zasób T-102 został przyjęty w Porosłach.', time: '5 min temu' },
-  { id: 2, type: 'WARNING', text: 'Mercedes BIA 10221 wymaga przeglądu technicznego.', time: '1h temu' },
-  { id: 3, type: 'INFO', text: 'Zaplanowano wydanie dla oddziału Suwałki.', time: '3h temu' },
-];
-
-const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSidebar, onRefresh }) => {
+const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSidebar, onRefresh, notifications }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  const [firstName, setFirstName] = useState(user.first_name || '');
+  const [lastName, setLastName] = useState(user.last_name || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
 
   const handleRefreshClick = () => {
     setIsRefreshing(true);
-    onRefresh(); // Trigger parent refresh logic
-    setTimeout(() => setIsRefreshing(false), 1500);
+    onRefresh();
+    setTimeout(() => setIsRefreshing(false), 1200);
+  };
+
+  const handleProfileUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdating(true);
+    try {
+      const updateData: any = { data: { first_name: firstName, last_name: lastName } };
+      if (newPassword) updateData.password = newPassword;
+      const { error } = await supabase.auth.updateUser(updateData);
+      if (error) throw error;
+      setIsSettingsOpen(false);
+      onRefresh();
+    } catch (err: any) { console.error(err.message); }
+    finally { setIsUpdating(false); }
   };
 
   return (
-    <header className="h-24 bg-white/80 backdrop-blur-2xl border-b border-slate-100 flex items-center justify-between px-4 lg:px-12 sticky top-0 z-40 shadow-sm shrink-0">
-      <div className="flex items-center space-x-4 lg:space-x-10">
-        <button onClick={toggleSidebar} className="lg:hidden p-3 text-slate-500 hover:bg-slate-50 rounded-2xl transition-all">
-          <Menu size={24} />
+    <header className="h-20 sm:h-28 bg-white/80 backdrop-blur-3xl border-b-4 border-slate-50 flex items-center justify-between px-4 sm:px-14 sticky top-0 z-40 shadow-xl shrink-0">
+      <div className="flex items-center space-x-4 sm:space-x-12">
+        <button onClick={toggleSidebar} className="lg:hidden p-3 sm:p-4 bg-[#0f172a] text-white rounded-xl sm:rounded-2xl shadow-lg">
+          <Menu size={20} className="sm:size-6" />
         </button>
-
         <div className="flex flex-col">
-          <h2 className="text-xl lg:text-3xl font-black text-[#0f172a] tracking-tighter uppercase leading-none">{activeModule}</h2>
-          <p className="text-[8px] lg:text-[10px] font-black text-[#22c55e] uppercase tracking-[0.4em] mt-1">OK</p>
-        </div>
-        
-        <div className="h-10 w-[2px] bg-slate-100 hidden lg:block"></div>
-        
-        <div className="relative hidden xl:block group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-[#22c55e] transition-colors" />
-          <input 
-            type="text" 
-            placeholder="Szukaj zasobów..." 
-            className="pl-16 pr-8 py-4 bg-slate-100/50 border-none rounded-[2rem] text-sm font-bold focus:ring-4 focus:ring-[#22c55e]/10 outline-none w-[350px] transition-all"
-          />
+          <h2 className="text-lg sm:text-3xl font-black text-[#0f172a] tracking-tighter uppercase leading-none italic truncate max-w-[120px] sm:max-w-none">{activeModule}</h2>
+          <div className="flex items-center space-x-2 mt-1 sm:mt-3">
+             <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-[#22c55e] rounded-full animate-pulse"></span>
+             <p className="text-[7px] sm:text-[10px] font-black text-[#22c55e] uppercase tracking-[0.2em] sm:tracking-[0.5em]">ONLINE</p>
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center space-x-2 lg:space-x-8">
+      <div className="flex items-center space-x-2 sm:space-x-6">
         <button 
           onClick={handleRefreshClick}
-          className={`p-3 lg:p-4 text-slate-400 hover:text-[#22c55e] hover:bg-green-50 rounded-[1.2rem] lg:rounded-[1.5rem] transition-all ${isRefreshing ? 'bg-green-50 text-[#22c55e]' : ''}`}
-          title="Odśwież dane"
+          className={`p-3 sm:p-5 text-slate-400 hover:text-[#22c55e] rounded-xl sm:rounded-[1.8rem] transition-all ${isRefreshing ? 'bg-green-50 text-[#22c55e]' : ''}`}
         >
-          <RefreshCw size={20} className={isRefreshing ? 'animate-spin-slow' : ''} />
+          <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : 'sm:size-[22px]'} />
         </button>
-        
+
         <div className="relative">
           <button 
             onClick={() => setIsNotifOpen(!isNotifOpen)}
-            className="relative p-3 lg:p-4 text-slate-400 hover:text-[#22c55e] hover:bg-green-50 rounded-[1.2rem] lg:rounded-[1.5rem] transition-all group"
+            className={`p-3 sm:p-5 text-slate-400 hover:text-[#22c55e] rounded-xl sm:rounded-[1.8rem] transition-all ${isNotifOpen ? 'bg-slate-50' : ''}`}
           >
-            <Bell size={20} />
-            <span className="absolute top-3 right-3 lg:top-4 lg:right-4 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 lg:border-4 border-white"></span>
+            <Bell size={18} className="sm:size-[22px]" />
+            {unreadCount > 0 && <span className="absolute top-2 right-2 sm:top-4 sm:right-4 w-2 h-2 sm:w-3 sm:h-3 bg-rose-500 rounded-full border-2 border-white shadow-xl"></span>}
           </button>
-
+          
           {isNotifOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setIsNotifOpen(false)}></div>
-              <div className="absolute right-0 mt-6 w-[280px] lg:w-96 bg-white rounded-[2rem] lg:rounded-[2.5rem] shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-4">
-                <div className="p-6 lg:p-8 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                   <h3 className="text-[10px] font-black uppercase tracking-widest text-[#0f172a]">Powiadomienia</h3>
-                   <button onClick={() => setIsNotifOpen(false)} className="text-slate-400"><X size={16} /></button>
+            <div className="fixed sm:absolute right-4 left-4 sm:right-0 sm:left-auto mt-6 sm:mt-8 w-auto sm:w-[400px] bg-[#0f172a] rounded-[2rem] shadow-2xl border-4 border-[#22c55e]/20 z-50 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="p-6 sm:p-10 border-b border-white/10 flex justify-between items-center">
+                   <h3 className="text-[9px] sm:text-[11px] font-black uppercase tracking-widest text-white">Logistyka</h3>
+                   <button onClick={() => setIsNotifOpen(false)} className="text-white/30"><X size={18}/></button>
                 </div>
-                <div className="max-h-[300px] lg:max-h-[400px] overflow-y-auto">
-                   {MOCK_NOTIFICATIONS.map(n => (
-                     <div key={n.id} className="p-5 lg:p-6 border-b border-slate-50 hover:bg-slate-50 transition-colors flex items-start space-x-4">
-                        <div className={`mt-1 p-2 rounded-xl shrink-0 ${n.type === 'SUCCESS' ? 'bg-green-50 text-[#22c55e]' : 'bg-rose-50 text-rose-500'}`}>
-                           {n.type === 'SUCCESS' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                <div className="max-h-[350px] overflow-y-auto no-scrollbar">
+                   {notifications.length === 0 ? (
+                     <div className="p-10 text-center"><p className="text-[10px] text-white/20 font-black uppercase italic">Brak zdarzeń</p></div>
+                   ) : notifications.map(n => (
+                     <div key={n.id} className="p-6 border-b border-white/5 flex items-start space-x-4 hover:bg-white/5">
+                        <div className={`p-2 rounded-xl shrink-0 ${n.type === 'WARNING' ? 'bg-amber-500' : 'bg-[#22c55e]'} text-white`}>
+                           {n.title.includes('ZAMÓWIENIE') ? <ShoppingBag size={16} /> : <Truck size={16} />}
                         </div>
-                        <div className="min-w-0">
-                           <p className="text-[10px] lg:text-[11px] font-bold text-slate-700 leading-snug truncate lg:whitespace-normal">{n.text}</p>
-                           <p className="text-[8px] font-black text-slate-300 uppercase mt-2">{n.time}</p>
+                        <div className="flex-1 min-w-0">
+                           <p className={`text-[8px] font-black uppercase mb-1 ${n.type === 'WARNING' ? 'text-amber-500' : 'text-[#22c55e]'}`}>{n.title}</p>
+                           <p className="text-[11px] font-bold text-white uppercase leading-tight">{n.message}</p>
                         </div>
                      </div>
                    ))}
                 </div>
-              </div>
-            </>
+            </div>
           )}
         </div>
 
-        <div className="flex items-center space-x-2 lg:space-x-6 pl-2 lg:pl-8 border-l border-slate-100">
-          <button 
-            onClick={onLogout}
-            className="w-10 h-10 lg:w-14 lg:h-14 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white rounded-[1rem] lg:rounded-[1.5rem] transition-all flex items-center justify-center shadow-sm"
-          >
-            <LogOut size={20} />
-          </button>
-        </div>
+        <button onClick={() => setIsSettingsOpen(true)} className="w-12 h-12 sm:w-16 sm:h-16 bg-slate-50 border-2 border-white shadow-lg rounded-xl sm:rounded-[1.8rem] flex items-center justify-center text-[#0f172a] hover:bg-[#22c55e] hover:text-white transition-all">
+             <Settings size={20} className="sm:size-7" />
+        </button>
       </div>
+
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-xl" onClick={() => setIsSettingsOpen(false)}></div>
+          <div className="relative w-full max-w-2xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500">
+            <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center relative border-b-8 border-[#22c55e]">
+              <div className="flex items-center space-x-6 sm:space-x-8">
+                <div className="w-12 h-12 sm:w-20 sm:h-20 bg-[#22c55e] rounded-xl sm:rounded-[1.8rem] flex items-center justify-center text-white"><ShieldCheck size={28} className="sm:size-[40px]"/></div>
+                <div><h3 className="text-xl sm:text-4xl font-black uppercase italic leading-none">Profil</h3></div>
+              </div>
+              <button onClick={() => setIsSettingsOpen(false)} className="p-3 bg-white/10 rounded-full"><X size={24} /></button>
+            </div>
+            <form onSubmit={handleProfileUpdate} className="p-8 sm:p-12 space-y-6 sm:space-y-10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
+                 <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="IMIĘ" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-[2rem] text-xs font-black outline-none uppercase"/>
+                 <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="NAZWISKO" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-[2rem] text-xs font-black outline-none uppercase"/>
+              </div>
+              <div className="relative">
+                <input type={showPass ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="NOWE HASŁO" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-[2.5rem] text-xs font-black outline-none focus:border-[#22c55e] transition-all"/>
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300">{showPass ? <EyeOff size={20}/> : <Eye size={20}/>}</button>
+              </div>
+              <button type="submit" disabled={isUpdating} className="w-full py-5 sm:py-8 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-6 border-green-800 flex items-center justify-center space-x-4">
+                {isUpdating ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />}
+                <span>ZAPISZ PROFIL</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </header>
   );
 };
