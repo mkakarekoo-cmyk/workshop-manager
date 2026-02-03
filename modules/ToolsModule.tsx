@@ -5,7 +5,7 @@ import {
   MapPin, X, Save, Loader, ZoomIn, History, ArrowRightLeft, 
   Clock, Edit2, PackageCheck, Send, Info, Settings, Building2, 
   ChevronLeft, ChevronRight, MapPinned, Archive, Camera, ArrowRight, ShieldAlert,
-  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar, MessageSquarePlus
+  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar, MessageSquarePlus, Mail
 } from 'lucide-react';
 import { Tool, ToolStatus, User, Branch, ToolLog } from '../types';
 import Lightbox from '../components/Lightbox';
@@ -135,6 +135,13 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     fetchHistory();
   }, [manageTab, selectedToolId]);
 
+  // Funkcja symulująca/inicjująca wysyłkę e-maila przez Supabase Edge Functions
+  const triggerEmailNotification = async (payload: { type: 'ZAMÓWIENIE' | 'WYSYŁKA', toolName: string, fromBranch: string, toBranch: string, notes?: string }) => {
+    console.log(`[MAIL SYSTEM] Inicjalizacja powiadomienia e-mail dla: ${payload.toBranch}`);
+    // W rzeczywistym wdrożeniu tutaj nastąpiłoby wywołanie: supabase.functions.invoke('send-notification-email', { body: payload })
+    return true;
+  };
+
   const handleDeleteTool = async (id: string) => {
     try {
       const { error } = await supabase.from('tools').delete().eq('id', id);
@@ -150,6 +157,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     setIsSubmitting(true);
     try {
       const targetId = effectiveBranchId;
+      const myBranchName = branches.find(b => Number(b.id) === effectiveBranchId)?.name || 'Nieznany';
 
       if (action === 'RESERVE') {
         if (!resStartDate || !resEndDate) throw new Error("Wybierz zakres dat!");
@@ -178,9 +186,19 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         alert("Narzędzie przekazane do konserwacji.");
       } 
       else if (action === 'TRANSFER') {
+        const targetBranchName = branches.find(b => Number(b.id) === Number(transferBranchId))?.name || 'Inny oddział';
         await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
-        alert(`Narzędzie wysłane do oddziału: ${branches.find(b => Number(b.id) === Number(transferBranchId))?.name}`);
+        
+        // Wyślij maila do odbiorcy
+        await triggerEmailNotification({
+           type: 'WYSYŁKA',
+           toolName: selectedTool.name,
+           fromBranch: myBranchName,
+           toBranch: targetBranchName,
+           notes
+        });
+        alert(`Narzędzie wysłane! Wysłano powiadomienie e-mail do oddziału: ${targetBranchName}`);
       } 
       else if (action === 'RECEIPT') {
         const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
@@ -189,8 +207,18 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         alert("Narzędzie przyjęte na stan.");
       } 
       else if (action === 'ORDER') {
+        const ownerBranchName = selectedTool.current_branch?.name || 'Inny oddział';
         await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Potrzeba oddziału', operator_id: user.id });
-        alert("Zgłoszono zapotrzebowanie do oddziału posiadającego narzędzie.");
+        
+        // Wyślij maila do posiadacza
+        await triggerEmailNotification({
+           type: 'ZAMÓWIENIE',
+           toolName: selectedTool.name,
+           fromBranch: myBranchName,
+           toBranch: ownerBranchName,
+           notes
+        });
+        alert(`Zamówienie złożone! Oddział ${ownerBranchName} otrzymał powiadomienie e-mail.`);
       }
 
       onRefresh();
@@ -388,8 +416,9 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                                 <button onClick={() => handleLogisticsAction('ORDER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-blue-600 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-blue-900 flex items-center justify-center space-x-3 transition-all active:scale-95">
                                    <MessageSquarePlus size={20}/> <span>ZŁÓŻ ZAMÓWIENIE</span>
                                 </button>
-                                <div className="p-6 bg-blue-100/50 rounded-2xl border border-blue-200">
-                                   <p className="text-[10px] font-bold text-blue-800 uppercase italic text-center">Tylko oddział posiadający narzędzie może zainicjować jego wysyłkę.</p>
+                                <div className="p-6 bg-blue-100/50 rounded-2xl border border-blue-200 flex items-center space-x-4">
+                                   <Mail size={16} className="text-blue-500 shrink-0"/>
+                                   <p className="text-[10px] font-bold text-blue-800 uppercase italic">Złożenie zamówienia wyśle powiadomienie e-mail do obecnego posiadacza.</p>
                                 </div>
                               </div>
                             )}

@@ -1,8 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
-import { LogOut, Bell, RefreshCw, X, Menu, Info, Settings, Key, Eye, EyeOff, Save, ShieldCheck, ShoppingBag, Truck, PackageCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { LogOut, Bell, RefreshCw, X, Menu, Info, ShoppingBag, Truck, PackageCheck } from 'lucide-react';
 import { User, ModuleType, AppNotification } from '../types';
-import { supabase } from '../supabase';
 
 interface HeaderProps {
   user: User;
@@ -13,37 +12,16 @@ interface HeaderProps {
   notifications: AppNotification[];
 }
 
-const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSidebar, onRefresh, notifications }) => {
+const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, onRefresh, notifications }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
-  const [firstName, setFirstName] = useState(user.first_name || '');
-  const [lastName, setLastName] = useState(user.last_name || '');
-  const [newPassword, setNewPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   const handleRefreshClick = () => {
     setIsRefreshing(true);
     onRefresh();
     setTimeout(() => setIsRefreshing(false), 1200);
-  };
-
-  const handleProfileUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsUpdating(true);
-    try {
-      const updateData: any = { data: { first_name: firstName, last_name: lastName } };
-      if (newPassword) updateData.password = newPassword;
-      const { error } = await supabase.auth.updateUser(updateData);
-      if (error) throw error;
-      setIsSettingsOpen(false);
-      onRefresh();
-    } catch (err: any) { console.error(err.message); }
-    finally { setIsUpdating(false); }
   };
 
   return (
@@ -132,39 +110,14 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, activeModule, toggleSid
           )}
         </div>
 
-        <button onClick={() => setIsSettingsOpen(true)} className="w-12 h-12 sm:w-16 sm:h-16 bg-slate-50 border-2 border-white shadow-lg rounded-xl sm:rounded-[1.8rem] flex items-center justify-center text-[#0f172a] hover:bg-[#22c55e] hover:text-white transition-all">
-             <Settings size={20} className="sm:size-7" />
+        <button 
+          onClick={onLogout}
+          className="w-12 h-12 sm:w-16 sm:h-16 bg-rose-50 border-2 border-white shadow-lg rounded-xl sm:rounded-[1.8rem] flex items-center justify-center text-rose-500 hover:bg-rose-500 hover:text-white transition-all active:scale-95"
+          title="Wyloguj się"
+        >
+          <LogOut size={20} className="sm:size-7" />
         </button>
       </div>
-
-      {isSettingsOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
-          <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-xl" onClick={() => setIsSettingsOpen(false)}></div>
-          <div className="relative w-full max-w-2xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500">
-            <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center relative border-b-8 border-[#22c55e]">
-              <div className="flex items-center space-x-6 sm:space-x-8">
-                <div className="w-12 h-12 sm:w-20 sm:h-20 bg-[#22c55e] rounded-xl sm:rounded-[1.8rem] flex items-center justify-center text-white"><ShieldCheck size={28} className="sm:size-[40px]"/></div>
-                <div><h3 className="text-xl sm:text-4xl font-black uppercase italic leading-none">Mój Profil</h3></div>
-              </div>
-              <button onClick={() => setIsSettingsOpen(false)} className="p-3 bg-white/10 rounded-full"><X size={24} /></button>
-            </div>
-            <form onSubmit={handleProfileUpdate} className="p-8 sm:p-12 space-y-6 sm:space-y-10">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
-                 <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="IMIĘ" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-[2rem] text-xs font-black outline-none uppercase"/>
-                 <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="NAZWISKO" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-[2rem] text-xs font-black outline-none uppercase"/>
-              </div>
-              <div className="relative">
-                <input type={showPass ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="NOWE HASŁO" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl sm:rounded-[2.5rem] text-xs font-black outline-none focus:border-[#22c55e] transition-all"/>
-                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300">{showPass ? <EyeOff size={20}/> : <Eye size={20}/>}</button>
-              </div>
-              <button type="submit" disabled={isUpdating} className="w-full py-5 sm:py-8 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-6 border-green-800 flex items-center justify-center space-x-4">
-                {isUpdating ? <RefreshCw className="animate-spin" size={20} /> : <Save size={20} />}
-                <span>ZAKTUALIZUJ PROFIL</span>
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </header>
   );
 };
