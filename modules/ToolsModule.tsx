@@ -52,12 +52,15 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [newPhotoPreview, setNewPhotoPreview] = useState<string | null>(null);
 
-  // LOGIKA RÓL (RBAC) - ABSOLUTNA
+  // LOGIKA RÓL (RBAC)
   const isAdmin = user.role === 'ADMINISTRATOR';
-  const isAdvisor = user.role === 'DORADCA SERWISOWY';
   const isMechanic = user.role === 'MECHANIK';
 
   const selectedTool = useMemo(() => tools.find(t => t.id === selectedToolId), [tools, selectedToolId]);
+
+  const effectiveBranchId = useMemo(() => {
+    return simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId);
+  }, [simulationBranchId, user.branch_id]);
 
   useEffect(() => {
     if (selectedToolId) {
@@ -72,10 +75,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       setIsDeleting(false);
     }
   }, [selectedTool]);
-
-  const effectiveBranchId = useMemo(() => {
-    return simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId);
-  }, [simulationBranchId, user.branch_id]);
 
   const getToolImageUrl = (path: string | null | undefined) => {
     if (!path) return `${SUPABASE_URL}/storage/v1/object/public/tool-photos/placeholder.jpg`;
@@ -147,7 +146,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     setIsSubmitting(true);
     try {
       let photo_path = null;
-
       if (newPhoto) {
         const fileName = `tool_${Date.now()}_${newSerialNumber}.jpg`;
         const { error: uploadError } = await supabase.storage.from('tool-photos').upload(fileName, newPhoto);
@@ -171,91 +169,52 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         tool_id: tool.id,
         action: 'PRZYJĘCIE',
         to_branch_id: Number(newBranchId),
-        notes: 'Wprowadzenie nowego zasobu do systemu przez Administratora',
+        notes: 'Dodano do bazy przez administratora',
         operator_id: user.id
       });
 
-      alert("Narzędzie dodane pomyślnie!");
+      alert("Zasób został dodany.");
       setIsAddModalOpen(false);
-      setNewName('');
-      setNewSerialNumber('');
-      setNewDescription('');
-      setNewPhoto(null);
-      setNewPhotoPreview(null);
+      setNewName(''); setNewSerialNumber(''); setNewDescription(''); setNewPhoto(null); setNewPhotoPreview(null);
       onRefresh();
-    } catch (e: any) {
-      alert(e.message);
-    } finally {
-      setIsSubmitting(false);
-    }
+    } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 
   const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE') => {
-    if (!selectedTool || isMechanic) return;
+    if (!selectedTool) return;
     setIsSubmitting(true);
     try {
-      const myBranchId = Number(user.branch_id);
+      // WAŻNE: Przyjęcie wykonuje się na oddział aktualnie wybrany w symulacji (lub domyślny usera)
+      const targetId = effectiveBranchId;
 
       if (action === 'MAINTENANCE') {
-        await supabase.from('tool_logs').insert({ 
-          tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd techniczny. ${notes}`, operator_id: user.id 
-        });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd: ${notes}`, operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.MAINTENANCE }).eq('id', selectedTool.id);
       } else if (action === 'TRANSFER') {
-        await supabase.from('tool_logs').insert({ 
-          tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Zlecenie transportu', operator_id: user.id 
-        });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Wysyłka', operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
+      } else if (action === 'RECEIPT') {
+        // Przyjęcie na stan
+        const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
+        await supabase.from('tools').update({ status: newStatus, branch_id: targetId, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: targetId, notes: `Odebrano przesyłkę w oddziale.`, operator_id: user.id });
       } else if (action === 'ORDER') {
-        const isOccupied = selectedTool.status === ToolStatus.OCCUPIED;
-        await supabase.from('tool_logs').insert({ 
-          tool_id: selectedTool.id, action: isOccupied ? 'REZERWACJA' : 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: myBranchId, notes: notes || 'Potrzeba operacyjna', operator_id: user.id 
-        });
-      } else {
-        const newStatus = myBranchId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
-        await supabase.from('tools').update({ status: newStatus, branch_id: myBranchId, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: myBranchId, notes: `Przyjęcie na stan oddziału.`, operator_id: user.id });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Zapotrzebowanie', operator_id: user.id });
       }
+
       onRefresh();
       setSelectedToolId(null);
       setNotes('');
     } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
 
-  const handleSaveDescription = async () => {
-    if (!selectedTool || !isAdmin) return;
-    setIsSubmitting(true);
-    try {
-      const { error } = await supabase.from('tools').update({ description: toolDescription }).eq('id', selectedTool.id);
-      if (error) throw error;
-      alert("Dokumentacja zaktualizowana.");
-      onRefresh();
-    } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
-  };
-
-  const handleDeleteTool = async () => {
-    if (!selectedTool || !isAdmin) return;
-    if (!isDeleting) {
-      setIsDeleting(true);
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const { error } = await supabase.from('tools').delete().eq('id', selectedTool.id);
-      if (error) throw error;
-      alert("Narzędzie usunięte na stałe.");
-      setSelectedToolId(null);
-      onRefresh();
-    } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); setIsDeleting(false); }
-  };
-
   return (
     <div className="p-4 sm:p-8 lg:p-14 space-y-8 sm:space-y-12 pb-40 animate-in fade-in duration-700">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
-        <StatCard label="TRANSPORT" color="blue" icon={<Truck size={20}/>} value={tools.filter(t => t.status === ToolStatus.IN_TRANSIT).length} />
-        <StatCard label="ZAJĘTE" color="rose" icon={<Package size={20}/>} value={tools.filter(t => t.status === ToolStatus.OCCUPIED).length} />
-        <StatCard label="SERWIS" color="amber" icon={<AlertTriangle size={20}/>} value={tools.filter(t => t.status === ToolStatus.MAINTENANCE).length} />
-        <StatCard label="HUB" color="green" icon={<CheckCircle size={20}/>} value={tools.filter(t => t.status === ToolStatus.FREE).length} />
+        <StatCard label="W TRANSPORCIE" color="blue" icon={<Truck size={20}/>} value={tools.filter(t => t.status === ToolStatus.IN_TRANSIT).length} />
+        <StatCard label="WYDANE" color="rose" icon={<Package size={20}/>} value={tools.filter(t => t.status === ToolStatus.OCCUPIED).length} />
+        <StatCard label="W SERWISIE" color="amber" icon={<AlertTriangle size={20}/>} value={tools.filter(t => t.status === ToolStatus.MAINTENANCE).length} />
+        <StatCard label="DOSTĘPNE" color="green" icon={<CheckCircle size={20}/>} value={tools.filter(t => t.status === ToolStatus.FREE).length} />
       </div>
 
       <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-6 bg-[#0f172a] p-6 sm:p-10 rounded-[2rem] lg:rounded-[4rem] shadow-2xl border-b-8 border-[#22c55e]">
@@ -263,16 +222,16 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           <h2 className="text-2xl sm:text-5xl font-black text-white uppercase italic tracking-tighter leading-none mb-2 sm:mb-3">{viewMode}</h2>
           <p className="text-[#22c55e] text-[8px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] flex items-center italic">
             <Archive size={12} className="mr-2 sm:mr-3"/> 
-            {viewMode === 'BAZA NARZĘDZI' ? 'WIDOK GLOBALNY' : `ODDZIAŁ: ${branches.find(b => Number(b.id) === effectiveBranchId)?.name.toUpperCase()}`}
+            {simulationBranchId === 'all' ? 'CENTRALNY WIDOK SYSTEMU' : `LOKALIZACJA: ${branches.find(b => Number(b.id) === effectiveBranchId)?.name.toUpperCase()}`}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto z-10">
           <div className="relative group w-full lg:w-[450px]">
              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-             <input type="text" placeholder="Szukaj zasobu..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-14 pr-6 py-4 sm:py-6 bg-slate-800 text-white border border-slate-700 rounded-[1.5rem] sm:rounded-[2.5rem] text-xs sm:text-sm font-black outline-none focus:border-[#22c55e] uppercase transition-all" />
+             <input type="text" placeholder="Szukaj po nazwie lub S/N..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-14 pr-6 py-4 sm:py-6 bg-slate-800 text-white border border-slate-700 rounded-[1.5rem] sm:rounded-[2.5rem] text-xs sm:text-sm font-black outline-none focus:border-[#22c55e] uppercase transition-all" />
           </div>
           {isAdmin && (
-            <button onClick={() => setIsAddModalOpen(true)} className="w-full sm:w-auto px-8 py-4 sm:py-6 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[2.2rem] text-[10px] font-black uppercase tracking-widest shadow-2xl border-b-4 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Plus size={18}/><span>Dodaj</span></button>
+            <button onClick={() => setIsAddModalOpen(true)} className="w-full sm:w-auto px-8 py-4 sm:py-6 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[2.2rem] text-[10px] font-black uppercase tracking-widest shadow-2xl border-b-4 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Plus size={18}/><span>Dodaj Narzędzie</span></button>
           )}
         </div>
       </div>
@@ -288,15 +247,23 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/80 text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] border-b border-slate-100 italic">
-                <th className="px-12 py-8">Zasób / Opis</th>
-                <th className="px-12 py-8">Lokalizacja</th>
-                <th className="px-12 py-8">Status</th>
+                <th className="px-12 py-8">Zasób / Specyfikacja</th>
+                <th className="px-12 py-8">Aktualna Baza</th>
+                <th className="px-12 py-8">Status Logistyczny</th>
                 <th className="px-12 py-8 text-right">Akcja</th>
               </tr>
             </thead>
             <tbody className="divide-y-2 divide-slate-50">
               {tools.map(tool => (
-                <ToolRow key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} onZoom={setLightboxImage} />
+                <ToolRow 
+                  key={tool.id} 
+                  tool={tool} 
+                  effectiveBranchId={effectiveBranchId} 
+                  user={user} 
+                  onSelect={setSelectedToolId} 
+                  getToolImageUrl={getToolImageUrl} 
+                  onZoom={setLightboxImage} 
+                />
               ))}
             </tbody>
           </table>
@@ -304,12 +271,19 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
         <div className="lg:hidden p-4 space-y-4">
            {tools.map(tool => (
-             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} />
+             <ToolCard 
+                key={tool.id} 
+                tool={tool} 
+                effectiveBranchId={effectiveBranchId} 
+                user={user} 
+                onSelect={setSelectedToolId} 
+                getToolImageUrl={getToolImageUrl} 
+             />
            ))}
         </div>
       </div>
 
-      {/* MODAL DODAWANIA (TYLKO ADMIN) */}
+      {/* MODAL DODAWANIA */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-3xl" onClick={() => setIsAddModalOpen(false)}></div>
@@ -318,8 +292,8 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                 <div className="flex items-center space-x-6">
                   <div className="w-16 h-16 bg-[#22c55e] rounded-2xl flex items-center justify-center shadow-xl rotate-3"><Plus size={28}/></div>
                   <div>
-                    <h3 className="text-xl sm:text-3xl font-black uppercase italic leading-none">Dodaj Narzędzie</h3>
-                    <p className="text-[#22c55e] text-[9px] font-black uppercase tracking-widest mt-2">Nowy Zasób Systemowy</p>
+                    <h3 className="text-xl sm:text-3xl font-black uppercase italic leading-none">Wprowadź Zasób</h3>
+                    <p className="text-[#22c55e] text-[9px] font-black uppercase tracking-widest mt-2">Baza Systemowa Narzędzi</p>
                   </div>
                 </div>
                 <button onClick={() => setIsAddModalOpen(false)} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
@@ -328,53 +302,43 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
                    <div className="space-y-8">
                       <div className="space-y-4">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nazwa Narzędzia</label>
-                         <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY BETA" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nazwa</label>
+                         <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
                       </div>
                       <div className="grid grid-cols-2 gap-6">
                          <div className="space-y-4">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nr Seryjny</label>
-                            <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">S/N</label>
+                            <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="Numer seryjny" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
                          </div>
                          <div className="space-y-4">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Oddział</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Baza</label>
                             <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none appearance-none cursor-pointer">
                               {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                             </select>
                          </div>
                       </div>
                    </div>
-                   
                    <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic">Zdjęcie Poglądowe</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic">Zdjęcie</label>
                       <label className="w-full h-64 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center cursor-pointer hover:border-[#22c55e] transition-all overflow-hidden group shadow-inner relative">
                         {newPhotoPreview ? (
                           <img src={newPhotoPreview} className="w-full h-full object-cover" alt="Preview" />
                         ) : (
                           <>
                             <Camera size={48} className="text-slate-200 group-hover:scale-110 transition-transform mb-4" />
-                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Wgraj zdjęcie narzędzia</p>
+                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Wgraj zdjęcie zasobu</p>
                           </>
                         )}
                         <input type="file" className="hidden" accept="image/*" onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            setNewPhoto(file);
-                            setNewPhotoPreview(URL.createObjectURL(file));
-                          }
+                          if (file) { setNewPhoto(file); setNewPhotoPreview(URL.createObjectURL(file)); }
                         }} />
                       </label>
                    </div>
                 </div>
-
-                <div className="space-y-4">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Instrukcja / Opis Przeznaczenia</label>
-                   <textarea rows={3} value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Opisz przeznaczenie narzędzia lub uwagi techniczne..." className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
-                </div>
-
                 <button type="submit" disabled={isSubmitting} className="w-full py-6 sm:py-8 bg-[#22c55e] text-white rounded-[2rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-4 active:scale-95 transition-all">
                   {isSubmitting ? <Loader className="animate-spin" size={24}/> : <Save size={24}/>}
-                  <span>Zapisz w Bazie Danych</span>
+                  <span>Dodaj do bazy</span>
                 </button>
              </form>
           </div>
@@ -388,12 +352,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
             <div className="bg-[#0f172a] p-6 sm:p-12 text-white flex justify-between items-center relative border-b-8 border-[#22c55e] shrink-0">
                <div className="flex items-center space-x-4 sm:space-x-10 relative z-10">
                  <div className="w-16 h-16 sm:w-32 sm:h-32 bg-[#22c55e] rounded-[1.2rem] sm:rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl rotate-3 shrink-0 overflow-hidden">
-                    <img src={getToolImageUrl(selectedTool.photo_path)} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="" />
+                    <img src={getToolImageUrl(selectedTool.photo_path)} className="w-full h-full object-cover opacity-80" alt="" />
                     <div className="absolute inset-0 flex items-center justify-center"><Wrench size={28} className="sm:size-[56px] text-white/50" /></div>
                  </div>
                  <div className="min-w-0">
                    <h3 className="text-lg sm:text-4xl font-black uppercase tracking-tighter italic leading-none truncate">{selectedTool.name}</h3>
-                   <p className="text-[#22c55e] text-[8px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] mt-2 sm:mt-4">{user.role}: {isMechanic ? 'PODGLĄD' : 'ZARZĄDZANIE'}</p>
+                   <p className="text-[#22c55e] text-[8px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.5em] mt-2 sm:mt-4">ZARZĄDZANIE LOGISTYCZNE</p>
                  </div>
                </div>
                <button onClick={() => setSelectedToolId(null)} className="p-3 sm:p-6 bg-white/10 rounded-full hover:bg-white/20 active:scale-90 transition-all shrink-0"><X size={20} className="sm:size-8" /></button>
@@ -409,26 +373,33 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {manageTab === 'LOGISTYKA' && !isMechanic && (
                     <div className="space-y-8 sm:space-y-12">
-                      {selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === Number(user.branch_id) ? (
-                         <div className="p-8 sm:p-12 bg-blue-50 border-4 border-dashed border-blue-200 rounded-[2rem] sm:rounded-[4rem] text-center space-y-6 sm:space-y-12">
-                            <Truck size={48} className="mx-auto text-blue-500 animate-bounce" />
-                            <h4 className="text-xl sm:text-4xl font-black text-blue-900 uppercase italic">Oczekuje na odbiór</h4>
-                            <button onClick={() => handleLogisticsAction('RECEIPT')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-blue-600 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-blue-900">PRZYJMIJ NA STAN ODDZIAŁU</button>
+                      {/* AKCEPTACJA DOSTARCZENIA - KLUCZOWA POPRAWKA */}
+                      {selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === effectiveBranchId ? (
+                         <div className="p-8 sm:p-16 bg-blue-50 border-4 border-dashed border-blue-200 rounded-[2rem] sm:rounded-[4rem] text-center space-y-8 sm:space-y-14 shadow-inner animate-pulse">
+                            <Truck size={64} className="mx-auto text-blue-500 animate-bounce" />
+                            <div className="space-y-4">
+                               <h4 className="text-xl sm:text-5xl font-black text-blue-900 uppercase italic leading-none">DOSTARCZONE DO ODDZIAŁU</h4>
+                               <p className="text-blue-400 font-bold uppercase tracking-widest text-xs">Potwierdź fizyczne przyjęcie narzędzia na stan</p>
+                            </div>
+                            <button onClick={() => handleLogisticsAction('RECEIPT')} disabled={isSubmitting} className="w-full py-8 sm:py-12 bg-blue-600 text-white rounded-[1.5rem] sm:rounded-[4rem] font-black uppercase shadow-2xl border-b-8 border-blue-900 flex items-center justify-center space-x-6 hover:bg-blue-700 transition-all">
+                               {isSubmitting ? <Loader className="animate-spin" size={24}/> : <PackageCheck size={32}/>}
+                               <span>PRZYJMIJ NA STAN ODDZIAŁU</span>
+                            </button>
                          </div>
-                      ) : (Number(selectedTool.branch_id) === Number(user.branch_id) || isAdmin) ? (
+                      ) : (Number(selectedTool.branch_id) === effectiveBranchId || isAdmin) ? (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
                           <div className="space-y-6 sm:space-y-10">
-                            <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">WYŚLIJ DO ODDZIAŁU</label>
+                            <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">WYŚLIJ W DROGĘ</label>
                             <select value={transferBranchId} onChange={e => setTransferBranchId(e.target.value)} className="w-full px-6 py-4 sm:px-10 sm:py-7 bg-slate-50 border border-slate-200 rounded-[1.2rem] sm:rounded-[3rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]">
                                 {branches.filter(b => Number(b.id) !== Number(selectedTool.branch_id)).map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                             </select>
-                            <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi (komu, nr zlecenia)..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
-                            <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3"><Send size={20}/> <span>WYŚLIJ W DROGĘ</span></button>
+                            <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi transportowe..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
+                            <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 hover:bg-green-600 transition-all"><Send size={20}/> <span>ROZPOCZNIJ TRANSPORT</span></button>
                           </div>
                           <div className="flex flex-col justify-center p-8 sm:p-14 bg-amber-50/50 rounded-[2rem] sm:rounded-[5rem] border-4 border-dashed border-amber-200 text-center space-y-6 sm:space-y-10">
                              <Hammer size={32} className="mx-auto text-amber-500 animate-pulse"/>
                              <h4 className="text-xl sm:text-3xl font-black text-[#0f172a] uppercase italic">SERWIS / PRZEGLĄD</h4>
-                             <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase border-b-8 border-amber-800">WYŁĄCZ Z EKSPLOATACJI</button>
+                             <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase border-b-8 border-amber-800">WYŁĄCZ Z UŻYTKU</button>
                           </div>
                         </div>
                       ) : (
@@ -458,48 +429,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
                   {manageTab === 'INFO' && (
                     <div className="space-y-8 sm:space-y-12 pb-10">
-                       <div className="space-y-4 sm:space-y-8">
-                          <label className="text-[9px] sm:text-[11px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 flex items-center italic">
-                            <Info size={14} className="mr-2 text-[#22c55e]"/> PRZEZNACZENIE I INSTRUKCJA
-                          </label>
-                          {isAdmin ? (
-                            <div className="space-y-6">
-                              <textarea rows={6} value={toolDescription} onChange={e => setToolDescription(e.target.value)} placeholder="Opisz przeznaczenie narzędzia..." className="w-full p-6 sm:p-10 bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-bold uppercase outline-none focus:border-[#22c55e] shadow-inner"></textarea>
-                              <div className="flex flex-col sm:flex-row gap-6">
-                                <button onClick={handleSaveDescription} disabled={isSubmitting} className="w-full sm:w-auto px-10 py-5 bg-[#0f172a] text-[#22c55e] rounded-[1.5rem] sm:rounded-[2.5rem] font-black uppercase text-[10px] tracking-widest shadow-2xl flex items-center justify-center space-x-4 hover:bg-[#22c55e] hover:text-white transition-all border-b-6 border-black">
-                                   {isSubmitting ? <Loader className="animate-spin" size={18}/> : <Save size={18}/>}
-                                   <span>Zapisz Zmiany Dokumentacji</span>
-                                </button>
-                                <button onClick={() => setLightboxImage(getToolImageUrl(selectedTool.photo_path))} className="w-full sm:w-auto px-10 py-5 bg-slate-100 text-slate-500 rounded-[1.5rem] sm:rounded-[2.5rem] font-black uppercase text-[10px] tracking-widest flex items-center justify-center space-x-4 hover:bg-slate-200 transition-all">
-                                   <Camera size={18}/>
-                                   <span>Powiększ Zdjęcie</span>
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="p-8 sm:p-12 bg-slate-50 rounded-[1.5rem] sm:rounded-[4rem] border-2 border-slate-100 italic min-h-[120px] shadow-inner flex items-center justify-center text-center">
-                               <p className="text-slate-600 font-bold uppercase text-xs sm:text-sm leading-relaxed">
-                                  {selectedTool.description || "Brak instrukcji przeznaczenia w bazie."}
-                                </p>
-                            </div>
-                          )}
-                       </div>
-
-                       {isAdmin && (
-                         <div className="bg-rose-50 p-6 sm:p-12 rounded-[1.5rem] sm:rounded-[4rem] border-4 border-dashed border-rose-100 flex flex-col md:flex-row items-center justify-between gap-6 mt-10 sm:mt-20">
-                            <div className="flex items-center space-x-6">
-                               <ShieldAlert size={40} className="text-rose-500 shrink-0"/>
-                               <div>
-                                 <h4 className="text-xl sm:text-3xl font-black text-rose-900 uppercase italic leading-none">Likwidacja Zasobu</h4>
-                                 <p className="text-rose-400 text-[8px] sm:text-[10px] font-black uppercase mt-2 italic">Opcja dostępna tylko dla Administratora</p>
-                               </div>
-                            </div>
-                            <button onClick={handleDeleteTool} disabled={isSubmitting} className={`w-full md:w-auto px-10 py-6 rounded-[1.5rem] sm:rounded-[3rem] font-black uppercase text-[10px] sm:text-[12px] tracking-[0.2em] shadow-2xl transition-all border-b-8 border-black active:scale-95 flex items-center justify-center space-x-3 ${isDeleting ? 'bg-rose-600 text-white animate-bounce' : 'bg-white text-rose-500 hover:bg-rose-500 hover:text-white'}`}>
-                               {isDeleting ? <CheckCircle size={20}/> : <Trash2 size={20}/>}
-                               <span>{isDeleting ? 'POTWIERDZAM USUNIĘCIE' : 'USUŃ Z BAZY'}</span>
-                            </button>
-                         </div>
-                       )}
+                       <div className="p-8 sm:p-12 bg-slate-50 rounded-[1.5rem] sm:rounded-[4rem] border-2 border-slate-100 italic min-h-[120px] shadow-inner flex items-center justify-center text-center">
+                           <p className="text-slate-600 font-bold uppercase text-xs sm:text-sm leading-relaxed">
+                              {selectedTool.description || "Brak instrukcji przeznaczenia w bazie."}
+                            </p>
+                        </div>
                     </div>
                   )}
                </div>
@@ -514,18 +448,16 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 };
 
 const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom }: any) => {
-  const isAdmin = user.role === 'ADMINISTRATOR';
-  const isAdvisor = user.role === 'DORADCA SERWISOWY';
   const isMechanic = user.role === 'MECHANIK';
-
-  const myRealBranchId = Number(user.branch_id);
-  const isPhysicallyInMyBranch = Number(tool.branch_id) === myRealBranchId;
-  const isHeadingToMe = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myRealBranchId;
-
-  const canManageHere = isAdmin || (isAdvisor && isPhysicallyInMyBranch);
+  
+  // Czy narzędzie fizycznie znajduje się w aktualnie przeglądanym/wybranym oddziale?
+  const isPhysicallyHere = Number(tool.branch_id) === effectiveBranchId;
+  
+  // Czy narzędzie JEST W DRODZE DO aktualnie wybranego oddziału?
+  const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === effectiveBranchId;
 
   return (
-    <tr className="group hover:bg-slate-50/50 transition-all duration-300">
+    <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isHeadingToThisBranch ? 'bg-blue-50/30' : ''}`}>
       <td className="px-12 py-8">
         <div className="flex items-center space-x-8">
           <div 
@@ -542,22 +474,27 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
         </div>
       </td>
       <td className="px-12 py-8">
-         <div className={`inline-flex items-center px-4 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest ${isPhysicallyInMyBranch ? 'bg-green-50 text-[#22c55e] border-green-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+         <div className={`inline-flex items-center px-4 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest ${isPhysicallyHere ? 'bg-green-50 text-[#22c55e] border-green-100 shadow-sm' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
             <MapPin size={12} className="mr-2" /> {(tool.current_branch?.name || 'HUB').toUpperCase()}
          </div>
       </td>
       <td className="px-12 py-8">
-         <div className={`flex items-center space-x-3 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : 'text-rose-500'}`}>
+         <div className={`flex items-center space-x-3 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : tool.status === ToolStatus.IN_TRANSIT ? 'text-blue-500 animate-pulse' : 'text-rose-500'}`}>
             <span className={`w-2 h-2 rounded-full bg-current ${tool.status !== ToolStatus.FREE ? 'animate-pulse' : ''}`}></span>
             <span className="text-[10px] font-black uppercase tracking-widest italic">{tool.status}</span>
          </div>
       </td>
       <td className="px-12 py-8 text-right">
-         <button onClick={() => onSelect(tool.id)} className={`px-8 py-4 text-white rounded-[1.5rem] text-[9px] font-black uppercase tracking-widest transition-all border-b-4 active:scale-95 ${isMechanic ? 'bg-slate-400 border-slate-600' : (isHeadingToMe || canManageHere ? 'bg-[#0f172a] border-black hover:bg-[#22c55e]' : 'bg-rose-500 border-rose-800')}`}>
+         <button onClick={() => onSelect(tool.id)} className={`px-8 py-4 text-white rounded-[1.5rem] text-[9px] font-black uppercase tracking-widest transition-all border-b-4 active:scale-95 ${
+           isMechanic ? 'bg-slate-400 border-slate-600' : 
+           isHeadingToThisBranch ? 'bg-blue-600 border-blue-900 animate-bounce' : 
+           isPhysicallyHere ? 'bg-[#0f172a] border-black hover:bg-[#22c55e]' : 
+           'bg-rose-500 border-rose-800'
+         }`}>
             {isMechanic ? (
-                <span className="flex items-center space-x-2"><Eye size={12}/> <span>SZCZEGÓŁY</span></span>
+                <span className="flex items-center space-x-2"><Eye size={12}/> <span>PODGLĄD</span></span>
             ) : (
-                isHeadingToMe ? 'ODBIERZ' : (canManageHere ? 'ZARZĄDZAJ' : (tool.status === ToolStatus.OCCUPIED ? 'REZERWACJA' : 'ZAMÓW'))
+                isHeadingToThisBranch ? 'ODBIERZ' : (isPhysicallyHere ? 'ZARZĄDZAJ' : (tool.status === ToolStatus.OCCUPIED ? 'REZERWACJA' : 'ZAMÓW'))
             )}
          </button>
       </td>
@@ -566,47 +503,43 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
 };
 
 const ToolCard = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl }: any) => {
-  const isAdmin = user.role === 'ADMINISTRATOR';
-  const isAdvisor = user.role === 'DORADCA SERWISOWY';
   const isMechanic = user.role === 'MECHANIK';
-  const myRealBranchId = Number(user.branch_id);
-  const isPhysicallyInMyBranch = Number(tool.branch_id) === myRealBranchId;
-  const isHeadingToMe = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myRealBranchId;
-  const canManageHere = isAdmin || (isAdvisor && isPhysicallyInMyBranch);
+  const isPhysicallyHere = Number(tool.branch_id) === effectiveBranchId;
+  const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === effectiveBranchId;
 
   return (
-    <div className="bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-lg flex flex-col space-y-4">
+    <div className={`bg-white p-5 rounded-[1.5rem] border shadow-lg flex flex-col space-y-4 ${isHeadingToThisBranch ? 'border-blue-500 ring-4 ring-blue-50' : 'border-slate-100'}`}>
       <div className="flex items-center space-x-4">
-        <div className="w-16 h-16 bg-slate-50 rounded-xl overflow-hidden shrink-0 border border-slate-100 shadow-inner">
+        <div className="w-16 h-16 bg-slate-50 rounded-xl overflow-hidden shrink-0 border border-slate-100">
            <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover" alt="" />
         </div>
         <div className="min-w-0 flex-1">
           <h4 className="text-sm font-black uppercase italic tracking-tighter text-[#0f172a] truncate">{tool.name}</h4>
           <div className="flex items-center space-x-2 mt-1">
-             <div className={`w-2 h-2 rounded-full ${tool.status === ToolStatus.FREE ? 'bg-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
-             <p className="text-[8px] font-black uppercase text-slate-400 italic">{tool.status} • {tool.current_branch?.name || 'HUB'}</p>
+             <div className={`w-2 h-2 rounded-full ${tool.status === ToolStatus.FREE ? 'bg-[#22c55e]' : tool.status === ToolStatus.IN_TRANSIT ? 'bg-blue-500 animate-pulse' : 'bg-rose-500'}`}></div>
+             <p className="text-[8px] font-black uppercase text-slate-400 italic">{tool.status} • {tool.current_branch?.name}</p>
           </div>
         </div>
       </div>
-      <button onClick={() => onSelect(tool.id)} className={`w-full py-4 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 ${isMechanic ? 'bg-slate-400 border-slate-600' : (isHeadingToMe || canManageHere ? 'bg-[#0f172a] border-black' : 'bg-rose-500 border-rose-800')}`}>
-        {isMechanic ? 'SZCZEGÓŁY' : (isHeadingToMe ? 'ODBIERZ' : (canManageHere ? 'ZARZĄDZAJ' : 'ZAMÓW'))}
+      <button onClick={() => onSelect(tool.id)} className={`w-full py-4 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 ${
+        isMechanic ? 'bg-slate-400 border-slate-600' : 
+        isHeadingToThisBranch ? 'bg-blue-600 border-blue-900' : 
+        isPhysicallyHere ? 'bg-[#0f172a] border-black' : 
+        'bg-rose-500 border-rose-800'
+      }`}>
+        {isHeadingToThisBranch ? 'ODBIERZ' : 'SZCZEGÓŁY'}
       </button>
     </div>
   );
 };
 
 const StatCard = ({ label, value, color, icon }: any) => {
-  const themes: any = { 
-    blue: 'text-blue-600 bg-blue-50', 
-    rose: 'text-rose-600 bg-rose-50', 
-    amber: 'text-amber-600 bg-amber-50', 
-    green: 'text-[#22c55e] bg-green-50' 
-  };
+  const themes: any = { blue: 'text-blue-600 bg-blue-50', rose: 'text-rose-600 bg-rose-50', amber: 'text-amber-600 bg-amber-50', green: 'text-[#22c55e] bg-green-50' };
   return (
-    <div className="p-4 sm:p-8 rounded-[1.5rem] sm:rounded-[2.5rem] bg-white shadow-xl flex flex-col items-center text-center relative overflow-hidden group border border-slate-50">
-      <div className={`p-3 sm:p-5 rounded-xl sm:rounded-2xl mb-2 sm:mb-4 ${themes[color]} group-hover:scale-110 transition-transform`}>{icon}</div>
-      <p className="text-[7px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 italic leading-none">{label}</p>
-      <h3 className="text-2xl sm:text-5xl font-black italic text-slate-800 tracking-tighter leading-none">{value}</h3>
+    <div className="p-4 sm:p-8 rounded-[1.5rem] sm:rounded-[2.5rem] bg-white shadow-xl flex flex-col items-center text-center border border-slate-50">
+      <div className={`p-3 sm:p-5 rounded-xl sm:rounded-2xl mb-2 sm:mb-4 ${themes[color]}`}>{icon}</div>
+      <p className="text-[7px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 italic">{label}</p>
+      <h3 className="text-2xl sm:text-5xl font-black italic text-slate-800 tracking-tighter">{value}</h3>
     </div>
   );
 };

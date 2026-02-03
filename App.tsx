@@ -74,36 +74,49 @@ const App: React.FC = () => {
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
     try {
-      const branchNum = simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId);
+      const isGlobal = simulationBranchId === 'all' && user.role === 'ADMINISTRATOR';
+      const branchNum = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
       
-      const { data, error } = await supabase
+      let query = supabase
         .from('tool_logs')
         .select('*, tool:tools(name, status, target_branch_id), from_branch:branches!tool_logs_from_branch_id_fkey(name), to_branch:branches!tool_logs_to_branch_id_fkey(name)')
-        .or(`to_branch_id.eq.${branchNum},and(action.in.(ZAMÓWIENIE,REZERWACJA),from_branch_id.eq.${branchNum})`)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(isGlobal ? 20 : 10);
 
+      // Jeśli nie jesteśmy Adminem w widoku globalnym, filtrujemy tylko to co dotyczy naszego oddziału
+      if (!isGlobal) {
+        query = query.or(`to_branch_id.eq.${branchNum},from_branch_id.eq.${branchNum}`);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
 
       if (data) {
         const mapped: AppNotification[] = data.map((log: any) => {
           let title = log.action;
-          let message = `Zdarzenie: ${log.action} dla ${log.tool?.name || 'zasobu'}`;
+          let message = `${log.tool?.name || 'Zasób'}: ${log.action}`;
           let type: 'INFO' | 'WARNING' | 'SUCCESS' = 'INFO';
 
-          if (log.action === 'PRZESUNIĘCIE' && log.to_branch_id === branchNum) {
-            const isWaiting = log.tool?.status === ToolStatus.IN_TRANSIT && Number(log.tool?.target_branch_id) === branchNum;
-            title = isWaiting ? 'OCZEKUJE NA ODBIÓR' : 'NARZĘDZIE W DRODZE';
-            message = isWaiting 
-              ? `Narzędzie ${log.tool?.name} dotarło! Potwierdź odbiór.` 
-              : `Narzędzie ${log.tool?.name} wysłane do Ciebie.`;
-            type = isWaiting ? 'SUCCESS' : 'INFO';
+          // Logika Odbioru
+          if (log.action === 'PRZESUNIĘCIE') {
+            const isToTarget = Number(log.to_branch_id) === branchNum || isGlobal;
+            if (isToTarget) {
+              const toolWaiting = log.tool?.status === ToolStatus.IN_TRANSIT && Number(log.tool?.target_branch_id) === Number(log.to_branch_id);
+              title = toolWaiting ? 'CZEKA NA ODBIÓR' : 'NARZĘDZIE W DRODZE';
+              message = `${log.tool?.name} wysłane z ${log.from_branch?.name || 'Bazy'}${toolWaiting ? ' - DOTARŁO!' : ''}`;
+              type = toolWaiting ? 'SUCCESS' : 'INFO';
+            }
           } 
-          else if (log.action === 'ZAMÓWIENIE' && log.from_branch_id === branchNum) {
-            title = 'PILNE ZAMÓWIENIE';
-            message = `Oddział ${log.to_branch?.name || 'Inny'} prosi o: ${log.tool?.name}.`;
+          else if (log.action === 'ZAMÓWIENIE' || log.action === 'REZERWACJA') {
+            title = 'PILNE ZGŁOSZENIE';
+            message = `Oddział ${log.to_branch?.name || 'Inny'} potrzebuje: ${log.tool?.name}`;
             type = 'WARNING';
-          } 
+          }
+          else if (log.action === 'PRZYJĘCIE') {
+            title = 'POTWIERDZONO ODBIÓR';
+            message = `Narzędzie ${log.tool?.name} zostało przyjęte na stan ${log.to_branch?.name}`;
+            type = 'SUCCESS';
+          }
 
           return {
             id: log.id,
@@ -143,7 +156,7 @@ const App: React.FC = () => {
     const interval = setInterval(() => {
         fetchNotifications();
         if (user?.role === 'ADMINISTRATOR') fetchAllUsers();
-    }, 15000);
+    }, 10000); // Częstsze odświeżanie dla lepszego UX
     fetchNotifications();
     return () => clearInterval(interval);
   }, [fetchNotifications, fetchAllUsers, user?.role]);
@@ -151,7 +164,7 @@ const App: React.FC = () => {
   if (loading) return (
     <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center space-y-8">
       <div className="w-24 h-24 border-8 border-white/5 border-t-[#22c55e] rounded-full animate-spin"></div>
-      <p className="font-black text-[#22c55e] uppercase tracking-[1em] animate-pulse text-xs text-center">Inicjalizacja systemu KROK 1...</p>
+      <p className="font-black text-[#22c55e] uppercase tracking-[1em] animate-pulse text-xs text-center">Synchronizacja Systemu...</p>
     </div>
   );
 
@@ -217,7 +230,7 @@ const App: React.FC = () => {
              )}
           </div>
           <footer className="w-full py-12 text-center text-slate-300 text-[10px] font-black uppercase tracking-[0.8em] mt-20">
-            © 2026 Menadżer Narzędzi - System Logistyczny (KROK 1)
+            © 2026 Menadżer Narzędzi - System Logistyczny (KROK 1.5)
           </footer>
         </main>
       </div>
