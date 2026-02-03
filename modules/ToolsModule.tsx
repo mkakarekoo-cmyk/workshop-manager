@@ -5,7 +5,7 @@ import {
   MapPin, X, Save, Loader, ZoomIn, History, ArrowRightLeft, 
   Clock, Edit2, PackageCheck, Send, Info, Settings, Building2, 
   ChevronLeft, ChevronRight, MapPinned, Archive, Camera, ArrowRight, ShieldAlert,
-  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar
+  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar, MessageSquarePlus
 } from 'lucide-react';
 import { Tool, ToolStatus, User, Branch, ToolLog } from '../types';
 import Lightbox from '../components/Lightbox';
@@ -39,7 +39,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [toolHistory, setToolHistory] = useState<ToolLog[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   
-  const [transferBranchId, setTransferBranchId] = useState<string>('2');
+  const [transferBranchId, setTransferBranchId] = useState<string>('1');
   const [notes, setNotes] = useState('');
   
   // REZERWACJA STATE
@@ -64,6 +64,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     if (simulationBranchId === 'all') return Number(user.branch_id);
     return Number(simulationBranchId);
   }, [simulationBranchId, user.branch_id]);
+
+  // Czy narzędzie jest fizycznie w moim oddziale?
+  const isOwner = useMemo(() => {
+    if (!selectedTool) return false;
+    return Number(selectedTool.branch_id) === effectiveBranchId;
+  }, [selectedTool, effectiveBranchId]);
 
   useEffect(() => {
     if (selectedToolId) {
@@ -174,6 +180,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       else if (action === 'TRANSFER') {
         await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
+        alert(`Narzędzie wysłane do oddziału: ${branches.find(b => Number(b.id) === Number(transferBranchId))?.name}`);
       } 
       else if (action === 'RECEIPT') {
         const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
@@ -183,7 +190,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       } 
       else if (action === 'ORDER') {
         await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Potrzeba oddziału', operator_id: user.id });
-        alert("Zgłoszono zapotrzebowanie.");
+        alert("Zgłoszono zapotrzebowanie do oddziału posiadającego narzędzie.");
       }
 
       onRefresh();
@@ -355,16 +362,37 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                       ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12">
                           <div className="space-y-6 sm:space-y-10">
-                            <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">PRZESUNIĘCIE MIĘDZY ODDZIAŁAMI</label>
-                            <select value={transferBranchId} onChange={e => setTransferBranchId(e.target.value)} className="w-full px-6 py-4 sm:px-10 sm:py-7 bg-slate-50 border border-slate-200 rounded-[1.2rem] sm:rounded-[3rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]">
-                                {branches.filter(b => Number(b.id) !== Number(selectedTool.branch_id)).map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-                            </select>
-                            <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi logistyczne..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
-                            
-                            <div className="grid grid-cols-2 gap-4">
-                               <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Send size={20}/> <span>WYŚLIJ</span></button>
-                               <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-amber-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Wrench size={20}/> <span>SERWIS</span></button>
-                            </div>
+                            {isOwner ? (
+                              <>
+                                <label className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 sm:ml-10 italic">PRZESUNIĘCIE MIĘDZY ODDZIAŁAMI</label>
+                                <select value={transferBranchId} onChange={e => setTransferBranchId(e.target.value)} className="w-full px-6 py-4 sm:px-10 sm:py-7 bg-slate-50 border border-slate-200 rounded-[1.2rem] sm:rounded-[3rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]">
+                                    {branches.filter(b => Number(b.id) !== Number(selectedTool.branch_id)).map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+                                </select>
+                                <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi logistyczne dla odbiorcy..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                   <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Send size={20}/> <span>WYŚLIJ</span></button>
+                                   <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-amber-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Wrench size={20}/> <span>SERWIS</span></button>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="p-8 sm:p-12 bg-blue-50/50 border-2 border-blue-100 rounded-[2.5rem] space-y-8 animate-in zoom-in duration-300">
+                                <div className="flex items-center space-x-4">
+                                  <div className="p-4 bg-blue-600 text-white rounded-2xl shadow-lg"><ShoppingBag size={24}/></div>
+                                  <div>
+                                    <h4 className="text-xl font-black text-blue-900 uppercase italic">ZAMÓW NARZĘDZIE</h4>
+                                    <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-1">Poproś oddział {(selectedTool.current_branch?.name || '').toUpperCase()} o wysyłkę</p>
+                                  </div>
+                                </div>
+                                <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uzasadnienie zapotrzebowania..." className="w-full p-6 sm:p-8 bg-white border border-blue-100 rounded-[1.5rem] sm:rounded-[2.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-blue-500 shadow-inner"></textarea>
+                                <button onClick={() => handleLogisticsAction('ORDER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-blue-600 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-blue-900 flex items-center justify-center space-x-3 transition-all active:scale-95">
+                                   <MessageSquarePlus size={20}/> <span>ZŁÓŻ ZAMÓWIENIE</span>
+                                </button>
+                                <div className="p-6 bg-blue-100/50 rounded-2xl border border-blue-200">
+                                   <p className="text-[10px] font-bold text-blue-800 uppercase italic text-center">Tylko oddział posiadający narzędzie może zainicjować jego wysyłkę.</p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           
                           <div className="p-8 sm:p-12 bg-rose-50 rounded-[2rem] sm:rounded-[4rem] border-4 border-dashed border-rose-100 space-y-8">
@@ -545,7 +573,7 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
               isPhysicallyHere ? 'bg-[#0f172a] border-black hover:bg-[#22c55e]' : 
               'bg-rose-500 border-rose-800'
             }`}>
-               {isHeadingToThisBranch ? 'ODBIERZ' : (isPhysicallyHere ? 'ZARZĄDZAJ' : 'REZERWUJ')}
+               {isHeadingToThisBranch ? 'ODBIERZ' : (isPhysicallyHere ? 'ZARZĄDZAJ' : 'ZAMÓW')}
             </button>
          </div>
       </td>
