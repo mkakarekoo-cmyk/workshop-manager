@@ -10,16 +10,15 @@ import { User, ModuleType, Branch, AppNotification, ToolStatus } from './types';
 import { supabase } from './supabase';
 
 const MOCK_BRANCHES: Branch[] = [
-  { id: '1', name: 'Porosły (HUB)', location: 'Porosły', email: 'hub.porosly@contractus.com.pl' },
-  { id: '2', name: 'Karniewo', location: 'Karniewo', email: 'karniewo@contractus.com.pl' },
-  { id: '3', name: 'Łomża', location: 'Łomża', email: 'lomza@contractus.com.pl' },
-  { id: '4', name: 'Brzozów', location: 'Brzozów', email: 'brzozow@contractus.com.pl' },
-  { id: '5', name: 'Suwałki', location: 'Suwałki', email: 'suwalki@contractus.com.pl' },
-  { id: '6', name: 'Serwis Porosły', location: 'Porosły', email: 'serwis.porosly@contractus.com.pl' },
+  { id: '1', name: 'Porosły (HUB)', location: 'Porosły', email: 'andrzej.chlabicz@contractus.com.pl, mateusz.kakareko@contractus.com.pl' },
+  { id: '2', name: 'Karniewo', location: 'Karniewo', email: 'serwis.karniewo@contrantus.com.pl' },
+  { id: '3', name: 'Łomża', location: 'Łomża', email: 'mateusz.nicikowski@contractus.com.pl' },
+  { id: '4', name: 'Brzozów', location: 'Brzozów', email: 'paulina.zlotkowska@contractus.com.pl, serwis@contractus.com.pl' },
+  { id: '5', name: 'Suwałki', location: 'Suwałki', email: 'serwis.suwalki@contractus.com.pl' },
+  { id: '6', name: 'Serwis Porosły', location: 'Porosły', email: 'adam.wnorowski@contractus.com.pl' },
 ];
 
 const MASTER_ADMIN_EMAIL = 'm.kakarekoo@gmail.com';
-const SPECIAL_USER_ADAM = 'adam.wnorowski@contractus.com.pl';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -34,14 +33,9 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [targetToolId, setTargetToolId] = useState<string | null>(null);
 
-  // Body scroll lock on mobile when sidebar is open
   useEffect(() => {
     if (window.innerWidth < 1024) {
-      if (isSidebarOpen) {
-        document.body.style.overflow = 'hidden';
-      } else {
-        document.body.style.overflow = '';
-      }
+      document.body.style.overflow = isSidebarOpen ? 'hidden' : '';
     }
   }, [isSidebarOpen]);
 
@@ -65,9 +59,6 @@ const App: React.FC = () => {
 
       if (userEmail === MASTER_ADMIN_EMAIL.toLowerCase()) {
         finalRole = 'ADMINISTRATOR';
-      } else if (userEmail === SPECIAL_USER_ADAM.toLowerCase()) {
-        finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '6'; // Serwis Porosły
       }
 
       const finalUser: User = {
@@ -81,13 +72,8 @@ const App: React.FC = () => {
       };
       
       setUser(finalUser);
-      
-      if (finalUser.role !== 'ADMINISTRATOR') {
-        setSimulationBranchId(finalUser.branch_id || '1');
-      } else {
-        setSimulationBranchId('all');
-        fetchAllUsers();
-      }
+      setSimulationBranchId(finalUser.role === 'ADMINISTRATOR' ? 'all' : finalUser.branch_id || '1');
+      fetchAllUsers();
     } catch (e) {
       console.error("Critical Profile Error:", e);
     } finally {
@@ -114,75 +100,26 @@ const App: React.FC = () => {
           if (isGlobal) return true;
           return Number(log.to_branch_id) === branchNum || Number(log.from_branch_id) === branchNum;
         }).map((log: any) => {
-          let title = log.action;
-          let message = `${log.tool?.name || 'Zasób'}: ${log.action}`;
-          let type: 'INFO' | 'WARNING' | 'SUCCESS' = 'INFO';
-
           const logTime = new Date(log.created_at).getTime();
           const isRead = logTime <= lastReadAt;
+          let title = log.action;
+          let type: 'INFO' | 'WARNING' | 'SUCCESS' = 'INFO';
+          let message = `${log.tool?.name || 'Zasób'}: ${log.action}`;
 
           if (log.action === 'PRZESUNIĘCIE') {
             const isToMyBranch = Number(log.to_branch_id) === branchNum;
-            const toolWaiting = log.tool?.status === ToolStatus.IN_TRANSIT && Number(log.tool?.target_branch_id) === Number(log.to_branch_id);
-            
-            if (isToMyBranch && toolWaiting) {
-              title = 'PRZESYŁKA DOTARŁA';
-              message = `Narzędzie ${log.tool?.name} jest w Twoim oddziale. Potwierdź odbiór!`;
-              type = 'SUCCESS';
-            } else if (isToMyBranch) {
-              title = 'NARZĘDZIE W DRODZE';
-              message = `Wysłano do Ciebie: ${log.tool?.name} z ${log.from_branch?.name}`;
-              type = 'INFO';
-            } else {
-              title = 'WYSYŁKA Z ODDZIAŁU';
-              message = `Narzędzie ${log.tool?.name} wysłane do ${log.to_branch?.name}`;
-              type = 'INFO';
+            if (isToMyBranch && log.tool?.status === ToolStatus.IN_TRANSIT) {
+               title = 'PRZESYŁKA DOTARŁA';
+               message = `Narzędzie ${log.tool?.name} jest w Twoim oddziale. Potwierdź odbiór!`;
+               type = 'SUCCESS';
             }
-          } 
-          else if (log.action === 'REZERWACJA') {
-            title = 'NOWA REZERWACJA';
-            message = `Oddział ${log.to_branch?.name} zarezerwował narzędzie: ${log.tool?.name}`;
-            type = 'WARNING';
           }
-          else if (log.action === 'ZAMÓWIENIE') {
-            title = 'NOWE ZAMÓWIENIE';
-            message = `Oddział ${log.to_branch?.name} prosi o: ${log.tool?.name}`;
-            type = 'WARNING';
-          }
-          else if (log.action === 'PRZYJĘCIE') {
-            title = 'ODEBRANO';
-            message = `Potwierdzono przyjęcie ${log.tool?.name} w oddziale ${log.to_branch?.name}`;
-            type = 'SUCCESS';
-          }
-
-          return {
-            id: log.id,
-            title,
-            message,
-            type,
-            created_at: log.created_at,
-            is_read: isRead,
-            tool_id: log.tool?.id
-          };
+          return { id: log.id, title, message, type, created_at: log.created_at, is_read: isRead, tool_id: log.tool?.id };
         });
         setNotifications(mapped);
       }
-    } catch (e) {
-      console.error("Notification Error:", e);
-    }
+    } catch (e) { console.error(e); }
   }, [user, simulationBranchId, lastReadAt]);
-
-  const markNotificationsRead = () => {
-    setLastReadAt(Date.now());
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-  };
-
-  const handleNotificationClick = (n: AppNotification) => {
-    if (n.tool_id) {
-      setActiveModule('BAZA NARZĘDZI');
-      setTargetToolId(n.tool_id);
-    }
-  };
 
   useEffect(() => {
     const init = async () => {
@@ -191,117 +128,53 @@ const App: React.FC = () => {
       else setLoading(false);
     };
     init();
-
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        fetchProfile(session.user.id, session.user.email);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-      }
+      if (event === 'SIGNED_IN' && session?.user) fetchProfile(session.user.id, session.user.email);
+      else if (event === 'SIGNED_OUT') setUser(null);
     });
     return () => authListener.subscription.unsubscribe();
   }, [fetchProfile]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-        fetchNotifications();
-        if (user?.role === 'ADMINISTRATOR') fetchAllUsers();
-    }, 8000);
+    const interval = setInterval(() => { fetchNotifications(); fetchAllUsers(); }, 10000);
     fetchNotifications();
     return () => clearInterval(interval);
-  }, [fetchNotifications, fetchAllUsers, user?.role]);
+  }, [fetchNotifications, fetchAllUsers]);
 
   if (loading) return (
     <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center space-y-8">
-      <div className="w-20 h-20 sm:w-24 sm:h-24 border-8 border-white/5 border-t-[#22c55e] rounded-full animate-spin"></div>
-      <p className="font-black text-[#22c55e] uppercase tracking-[0.5em] sm:tracking-[1em] animate-pulse text-[10px] sm:text-xs text-center px-6">Synchronizacja logistyki...</p>
+      <div className="w-20 h-20 border-8 border-white/5 border-t-[#22c55e] rounded-full animate-spin"></div>
+      <p className="font-black text-[#22c55e] uppercase tracking-[1em] animate-pulse text-xs text-center">Inicjalizacja Systemu...</p>
     </div>
   );
 
-  if (!user) return <Login 
-    error={authError}
-    onLogin={async (email, password) => {
-      setAuthError(null);
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        setAuthError(error.message.includes("Invalid login") ? "Błędny login lub hasło" : error.message);
-      }
-    }} 
-  />;
-
-  const onRefresh = () => {
-    setRefreshTrigger(p => p + 1);
-    fetchNotifications();
-    if (user.role === 'ADMINISTRATOR') fetchAllUsers();
-  };
+  if (!user) return <Login error={authError} onLogin={async (email, password) => {
+    setAuthError(null);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setAuthError("Błąd logowania: " + error.message);
+  }} />;
 
   return (
-    <div className="min-h-[100dvh] flex bg-[#f8fafc] text-slate-900 font-inter overflow-x-hidden">
+    <div className="min-h-[100dvh] flex bg-[#f8fafc] overflow-x-hidden">
       <Sidebar 
-        user={user}
-        branches={MOCK_BRANCHES}
-        activeModule={activeModule} 
-        onModuleChange={setActiveModule} 
-        isOpen={isSidebarOpen} 
-        toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
-        simulationBranchId={simulationBranchId}
-        setSimulationBranchId={setSimulationBranchId}
+        user={user} branches={MOCK_BRANCHES} activeModule={activeModule} onModuleChange={setActiveModule} 
+        isOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+        simulationBranchId={simulationBranchId} setSimulationBranchId={setSimulationBranchId}
         isSuperAdmin={user.role === 'ADMINISTRATOR'}
       />
-      <div className="flex-1 flex flex-col min-w-0 min-h-[100dvh] relative">
+      <div className="flex-1 flex flex-col min-w-0 min-h-[100dvh]">
         <Header 
-          user={user}
-          activeModule={activeModule} 
-          onLogout={() => supabase.auth.signOut()}
-          toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
-          onRefresh={onRefresh}
-          notifications={notifications}
-          onMarkRead={markNotificationsRead}
-          onNotificationClick={handleNotificationClick}
+          user={user} activeModule={activeModule} onLogout={() => supabase.signOut()} 
+          toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} onRefresh={() => setRefreshTrigger(p => p+1)}
+          notifications={notifications} onMarkRead={() => setLastReadAt(Date.now())}
+          onNotificationClick={(n) => { if(n.tool_id) { setActiveModule('BAZA NARZĘDZI'); setTargetToolId(n.tool_id); } }}
         />
-        <main className="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
-          <div className="max-w-[1920px] mx-auto px-0 sm:px-4">
-             {(activeModule === 'BAZA NARZĘDZI' || activeModule === 'MOJE NARZĘDZIA') && (
-               <ToolsModule 
-                  user={user} 
-                  simulationBranchId={simulationBranchId} 
-                  branches={MOCK_BRANCHES} 
-                  refreshTrigger={refreshTrigger} 
-                  onRefresh={onRefresh} 
-                  viewMode={activeModule as any} 
-                  targetToolId={targetToolId}
-                  onTargetToolClear={() => setTargetToolId(null)}
-               />
-             )}
-             {activeModule === 'UŻYTKOWNICY' && (
-               <UsersModule 
-                user={user} 
-                branches={MOCK_BRANCHES} 
-                allUsers={allUsers} 
-                onRefresh={onRefresh} 
-                refreshTrigger={refreshTrigger} 
-               />
-             )}
-             {activeModule === 'GRAFIK' && (
-               <ScheduleModule 
-                 user={user}
-                 branches={MOCK_BRANCHES}
-                 refreshTrigger={refreshTrigger}
-               />
-             )}
-          </div>
-          <footer className="w-full py-16 sm:py-24 flex flex-col items-center justify-center space-y-4 sm:space-y-6 mt-10 sm:mt-20 border-t border-slate-100 bg-white/50 backdrop-blur-sm">
-            <p className="text-slate-300 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.5em] sm:tracking-[1em] leading-none text-center px-4">
-              © 2026 Menadżer Narzędzi - System Logistyczny
-            </p>
-            <div className="flex items-center space-x-4 sm:space-x-6">
-              <div className="h-[1px] w-8 sm:w-16 bg-slate-100"></div>
-              <p className="text-slate-400 text-[9px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.4em] italic flex items-center">
-                Created by <span className="text-[#22c55e] ml-2 sm:ml-4">Mateusz Kakareko</span>
-              </p>
-              <div className="h-[1px] w-8 sm:w-16 bg-slate-100"></div>
-            </div>
-          </footer>
+        <main className="flex-1 p-0">
+          <ToolsModule 
+            user={user} simulationBranchId={simulationBranchId} branches={MOCK_BRANCHES} allUsers={allUsers}
+            refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(p => p+1)} viewMode={activeModule as any}
+            targetToolId={targetToolId} onTargetToolClear={() => setTargetToolId(null)}
+          />
         </main>
       </div>
     </div>
