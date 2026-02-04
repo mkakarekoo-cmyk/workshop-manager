@@ -42,7 +42,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
-      <aside className={`fixed inset-y-0 left-0 z-[6000] lg:sticky lg:top-0 ${isOpen ? 'translate-x-0 w-72 sm:w-80 shadow-2xl' : '-translate-x-full lg:translate-x-0 w-24 sm:w-28'} bg-[#0f172a] h-[100dvh] transition-all duration-500 ease-in-out flex flex-col border-r-4 sm:border-r-8 border-[#22c55e]/10`}>
+      {/* Usunięto h-[100dvh] oraz lg:sticky, aby sidebar przewijał się naturalnie ze stroną */}
+      <aside className={`fixed inset-y-0 left-0 z-[6000] lg:relative lg:translate-x-0 ${isOpen ? 'translate-x-0 w-72 sm:w-80 shadow-2xl' : '-translate-x-full lg:translate-x-0 w-24 sm:w-28'} bg-[#0f172a] min-h-screen transition-all duration-500 ease-in-out flex flex-col border-r-4 sm:border-r-8 border-[#22c55e]/10`}>
         <div className="h-20 sm:h-28 flex items-center justify-between px-6 sm:px-10 border-b border-white/5 shrink-0">
           {isOpen ? (
             <div className="flex items-center space-x-3 sm:space-x-6 overflow-hidden">
@@ -62,7 +63,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        <div className="flex-1 mt-6 sm:mt-10 flex flex-col overflow-y-auto no-scrollbar px-4">
+        <div className="flex-1 mt-6 sm:mt-10 flex flex-col px-4">
           {isOpen && isSuperAdmin && (
             <div className="mb-8 sm:mb-10 animate-in slide-in-from-left duration-500 px-2">
               <div className="p-4 sm:p-8 bg-white/5 rounded-[2rem] sm:rounded-[3rem] border border-white/10 shadow-2xl">

@@ -26,8 +26,8 @@ export interface Tool {
   photo_path?: string | null;
   shipped_at?: string | null;
   last_maintenance?: string | null;
-  current_branch?: { name: string };
-  target_branch?: { name: string };
+  current_branch?: { name: string, email?: string };
+  target_branch?: { name: string, email?: string };
 }
 
 export interface ToolReservation {
@@ -71,7 +71,7 @@ export interface User {
   assigned_van_id?: string | null;
 }
 
-export type ModuleType = 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK' | 'UŻYTKOWNICY';
+export type ModuleType = 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK' | 'FLOTA' | 'WARSZTAT' | 'UŻYTKOWNICY';
 
 export interface AppNotification {
   id: string;
