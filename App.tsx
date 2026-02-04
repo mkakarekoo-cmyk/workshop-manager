@@ -147,9 +147,11 @@ const App: React.FC = () => {
                 type = 'INFO';
               }
             } else if (log.action === 'ZAMÓWIENIE') {
-              const isForMe = Number(log.from_branch_id) === branchNum;
-              title = isForMe ? 'TWOJA PROŚBA O NARZĘDZIE' : 'NOWE ZAMÓWIENIE';
-              message = isForMe ? `Wysłano prośbę o: ${log.tool?.name}` : `Zapotrzebowanie od ${log.to_branch?.name}: ${log.tool?.name}`;
+              const isOwnerOfRequestedTool = Number(log.from_branch_id) === branchNum;
+              title = isOwnerOfRequestedTool ? 'NOWE ZAPOTRZEBOWANIE' : 'TWOJA PROŚBA O NARZĘDZIE';
+              message = isOwnerOfRequestedTool 
+                ? `Oddział ${log.to_branch?.name || 'Inny'} wysłał zapytanie o: ${log.tool?.name}`
+                : `Wysłano Twoją prośbę o narzędzie: ${log.tool?.name}`;
               type = 'WARNING';
             } else if (log.action === 'PRZYJĘCIE') {
               const isToMe = Number(log.to_branch_id) === branchNum;
