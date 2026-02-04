@@ -10,12 +10,12 @@ import { User, ModuleType, Branch, AppNotification, ToolStatus } from './types';
 import { supabase } from './supabase';
 
 const MOCK_BRANCHES: Branch[] = [
-  { id: '1', name: 'Porosły (HUB)', location: 'Porosły' },
-  { id: '2', name: 'Karniewo', location: 'Karniewo' },
-  { id: '3', name: 'Łomża', location: 'Łomża' },
-  { id: '4', name: 'Brzozów', location: 'Brzozów' },
-  { id: '5', name: 'Suwałki', location: 'Suwałki' },
-  { id: '6', name: 'Serwis Porosły', location: 'Porosły' },
+  { id: '1', name: 'Porosły (HUB)', location: 'Porosły', email: 'hub.porosly@contractus.com.pl' },
+  { id: '2', name: 'Karniewo', location: 'Karniewo', email: 'karniewo@contractus.com.pl' },
+  { id: '3', name: 'Łomża', location: 'Łomża', email: 'lomza@contractus.com.pl' },
+  { id: '4', name: 'Brzozów', location: 'Brzozów', email: 'brzozow@contractus.com.pl' },
+  { id: '5', name: 'Suwałki', location: 'Suwałki', email: 'suwalki@contractus.com.pl' },
+  { id: '6', name: 'Serwis Porosły', location: 'Porosły', email: 'serwis.porosly@contractus.com.pl' },
 ];
 
 const MASTER_ADMIN_EMAIL = 'm.kakarekoo@gmail.com';
@@ -33,6 +33,17 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [targetToolId, setTargetToolId] = useState<string | null>(null);
+
+  // Body scroll lock on mobile when sidebar is open
+  useEffect(() => {
+    if (window.innerWidth < 1024) {
+      if (isSidebarOpen) {
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.overflow = '';
+      }
+    }
+  }, [isSidebarOpen]);
 
   const fetchAllUsers = useCallback(async () => {
     try {
@@ -202,8 +213,8 @@ const App: React.FC = () => {
 
   if (loading) return (
     <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center space-y-8">
-      <div className="w-24 h-24 border-8 border-white/5 border-t-[#22c55e] rounded-full animate-spin"></div>
-      <p className="font-black text-[#22c55e] uppercase tracking-[1em] animate-pulse text-xs text-center">Synchronizacja logistyki...</p>
+      <div className="w-20 h-20 sm:w-24 sm:h-24 border-8 border-white/5 border-t-[#22c55e] rounded-full animate-spin"></div>
+      <p className="font-black text-[#22c55e] uppercase tracking-[0.5em] sm:tracking-[1em] animate-pulse text-[10px] sm:text-xs text-center px-6">Synchronizacja logistyki...</p>
     </div>
   );
 
@@ -225,7 +236,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex bg-[#f8fafc] text-slate-900 font-inter overflow-hidden">
+    <div className="min-h-[100dvh] flex bg-[#f8fafc] text-slate-900 font-inter overflow-x-hidden">
       <Sidebar 
         user={user}
         branches={MOCK_BRANCHES}
@@ -237,7 +248,7 @@ const App: React.FC = () => {
         setSimulationBranchId={setSimulationBranchId}
         isSuperAdmin={user.role === 'ADMINISTRATOR'}
       />
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-[100dvh] relative">
         <Header 
           user={user}
           activeModule={activeModule} 
@@ -249,8 +260,8 @@ const App: React.FC = () => {
           onNotificationClick={handleNotificationClick}
         />
         <main className="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
-          <div className="max-w-[1920px] mx-auto">
-             {activeModule === 'BAZA NARZĘDZI' || activeModule === 'MOJE NARZĘDZIA' ? (
+          <div className="max-w-[1920px] mx-auto px-0 sm:px-4">
+             {(activeModule === 'BAZA NARZĘDZI' || activeModule === 'MOJE NARZĘDZIA') && (
                <ToolsModule 
                   user={user} 
                   simulationBranchId={simulationBranchId} 
@@ -261,7 +272,7 @@ const App: React.FC = () => {
                   targetToolId={targetToolId}
                   onTargetToolClear={() => setTargetToolId(null)}
                />
-             ) : null}
+             )}
              {activeModule === 'UŻYTKOWNICY' && (
                <UsersModule 
                 user={user} 
@@ -279,16 +290,16 @@ const App: React.FC = () => {
                />
              )}
           </div>
-          <footer className="w-full py-24 flex flex-col items-center justify-center space-y-6 mt-20 border-t border-slate-100 bg-white/50 backdrop-blur-sm">
-            <p className="text-slate-300 text-[10px] font-black uppercase tracking-[1em] leading-none">
-              © 2026 Menadżer Narzędzi - System Logistyczny (KROK 1.9)
+          <footer className="w-full py-16 sm:py-24 flex flex-col items-center justify-center space-y-4 sm:space-y-6 mt-10 sm:mt-20 border-t border-slate-100 bg-white/50 backdrop-blur-sm">
+            <p className="text-slate-300 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.5em] sm:tracking-[1em] leading-none text-center px-4">
+              © 2026 Menadżer Narzędzi - System Logistyczny
             </p>
-            <div className="flex items-center space-x-6">
-              <div className="h-[1px] w-16 bg-slate-100"></div>
-              <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.4em] italic flex items-center">
-                Created by <span className="text-[#22c55e] ml-4 hover:scale-110 transition-transform cursor-default">Mateusz Kakareko</span>
+            <div className="flex items-center space-x-4 sm:space-x-6">
+              <div className="h-[1px] w-8 sm:w-16 bg-slate-100"></div>
+              <p className="text-slate-400 text-[9px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.4em] italic flex items-center">
+                Created by <span className="text-[#22c55e] ml-2 sm:ml-4">Mateusz Kakareko</span>
               </p>
-              <div className="h-[1px] w-16 bg-slate-100"></div>
+              <div className="h-[1px] w-8 sm:w-16 bg-slate-100"></div>
             </div>
           </footer>
         </main>

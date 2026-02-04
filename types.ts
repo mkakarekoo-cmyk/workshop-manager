@@ -11,6 +11,7 @@ export interface Branch {
   id: string;
   name: string;
   location: string;
+  email?: string;
 }
 
 export interface Tool {
@@ -82,7 +83,6 @@ export interface AppNotification {
   tool_id?: string;
 }
 
-// Add missing interfaces for Fleet and Workshop modules
 export interface Vehicle {
   id: string;
   plate_number: string;

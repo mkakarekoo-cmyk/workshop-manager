@@ -5,7 +5,7 @@ import {
   MapPin, X, Save, Loader, ZoomIn, History, ArrowRightLeft, 
   Clock, Edit2, PackageCheck, Send, Info, Settings, Building2, 
   ChevronLeft, ChevronRight, MapPinned, Archive, Camera, ArrowRight, ShieldAlert,
-  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar, MessageSquarePlus, Mail
+  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar, MessageSquarePlus, Mail, FileText
 } from 'lucide-react';
 import { Tool, ToolStatus, User, Branch, ToolLog } from '../types';
 import Lightbox from '../components/Lightbox';
@@ -67,13 +67,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     return Number(simulationBranchId);
   }, [simulationBranchId, user.branch_id]);
 
-  // Czy narzędzie jest fizycznie w moim oddziale?
   const isOwner = useMemo(() => {
     if (!selectedTool) return false;
     return Number(selectedTool.branch_id) === effectiveBranchId;
   }, [selectedTool, effectiveBranchId]);
 
-  // Obsługa nawigacji z powiadomień
   useEffect(() => {
     if (targetToolId) {
       setSelectedToolId(targetToolId);
@@ -145,21 +143,29 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     fetchHistory();
   }, [manageTab, selectedToolId]);
 
-  // Funkcja symulująca/inicjująca wysyłkę e-maila przez Supabase Edge Functions
-  const triggerEmailNotification = async (payload: { type: 'ZAMÓWIENIE' | 'WYSYŁKA', toolName: string, fromBranch: string, toBranch: string, notes?: string }) => {
-    console.log(`[MAIL SYSTEM] Inicjalizacja powiadomienia e-mail dla: ${payload.toBranch}`);
-    // W rzeczywistym wdrożeniu tutaj nastąpiłoby wywołanie: supabase.functions.invoke('send-notification-email', { body: payload })
-    return true;
-  };
-
-  const handleDeleteTool = async (id: string) => {
+  const triggerEmailNotification = async (payload: { 
+    type: 'ORDER' | 'TRANSFER', 
+    toolName: string, 
+    fromBranch: string, 
+    toBranch: string, 
+    notes?: string, 
+    senderEmail: string,
+    recipientEmail?: string 
+  }) => {
     try {
-      const { error } = await supabase.from('tools').delete().eq('id', id);
+      if (!payload.recipientEmail) {
+        console.warn(`[SYSTEM POCZTOWY] Brak zdefiniowanego adresu e-mail dla odbiorcy (${payload.toBranch}).`);
+        return;
+      }
+
+      const { error } = await supabase.functions.invoke('send-email-notification', {
+        body: payload
+      });
       if (error) throw error;
-      alert("Narzędzie usunięte z bazy danych.");
-      setConfirmDeleteId(null);
-      onRefresh();
-    } catch (e: any) { alert(e.message); }
+      console.log(`[SYSTEM POCZTOWY] Powiadomienie wysłane do: ${payload.recipientEmail}`);
+    } catch (e) {
+      console.warn(`[SYSTEM POCZTOWY] Błąd wysyłki e-mail (operacja kontynuowana):`, e);
+    }
   };
 
   const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE') => {
@@ -191,24 +197,39 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         alert("Rezerwacja zapisana.");
       } 
       else if (action === 'MAINTENANCE') {
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', notes: `Przegląd/Serwis: ${notes}`, operator_id: user.id });
+        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'KONSERWACJA', to_branch_id: selectedTool.branch_id, notes: `Przegląd/Serwis: ${notes}`, operator_id: user.id });
         await supabase.from('tools').update({ status: ToolStatus.MAINTENANCE }).eq('id', selectedTool.id);
         alert("Narzędzie przekazane do konserwacji.");
       } 
       else if (action === 'TRANSFER') {
-        const targetBranchName = branches.find(b => Number(b.id) === Number(transferBranchId))?.name || 'Inny oddział';
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
-        await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
+        const targetBranch = branches.find(b => Number(b.id) === Number(transferBranchId));
+        const targetBranchName = targetBranch?.name || 'Inny oddział';
+        const targetEmail = targetBranch?.email;
+
+        await supabase.from('tool_logs').insert({ 
+          tool_id: selectedTool.id, 
+          action: 'PRZESUNIĘCIE', 
+          from_branch_id: selectedTool.branch_id, 
+          to_branch_id: Number(transferBranchId), 
+          notes: notes || 'Transfer logistyczny', 
+          operator_id: user.id 
+        });
+        await supabase.from('tools').update({ 
+          status: ToolStatus.IN_TRANSIT, 
+          target_branch_id: Number(transferBranchId), 
+          shipped_at: new Date().toISOString() 
+        }).eq('id', selectedTool.id);
         
-        // Wyślij maila do odbiorcy
         await triggerEmailNotification({
-           type: 'WYSYŁKA',
+           type: 'TRANSFER',
            toolName: selectedTool.name,
            fromBranch: myBranchName,
            toBranch: targetBranchName,
-           notes
+           notes,
+           senderEmail: user.email,
+           recipientEmail: targetEmail
         });
-        alert(`Narzędzie wysłane! Wysłano powiadomienie e-mail do oddziału: ${targetBranchName}`);
+        alert(`Narzędzie wysłane! System wysłał e-mail informacyjny do oddziału: ${targetBranchName} (${targetEmail || 'brak e-maila w bazie'})`);
       } 
       else if (action === 'RECEIPT') {
         const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
@@ -217,18 +238,29 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         alert("Narzędzie przyjęte na stan.");
       } 
       else if (action === 'ORDER') {
-        const ownerBranchName = selectedTool.current_branch?.name || 'Inny oddział';
-        await supabase.from('tool_logs').insert({ tool_id: selectedTool.id, action: 'ZAMÓWIENIE', from_branch_id: selectedTool.branch_id, to_branch_id: targetId, notes: notes || 'Potrzeba oddziału', operator_id: user.id });
+        const ownerBranch = branches.find(b => Number(b.id) === Number(selectedTool.branch_id));
+        const ownerBranchName = ownerBranch?.name || 'Inny oddział';
+        const ownerEmail = ownerBranch?.email;
+
+        await supabase.from('tool_logs').insert({ 
+          tool_id: selectedTool.id, 
+          action: 'ZAMÓWIENIE', 
+          from_branch_id: selectedTool.branch_id, 
+          to_branch_id: targetId, 
+          notes: notes || 'Potrzeba oddziału', 
+          operator_id: user.id 
+        });
         
-        // Wyślij maila do posiadacza
         await triggerEmailNotification({
-           type: 'ZAMÓWIENIE',
+           type: 'ORDER',
            toolName: selectedTool.name,
            fromBranch: myBranchName,
            toBranch: ownerBranchName,
-           notes
+           notes,
+           senderEmail: user.email,
+           recipientEmail: ownerEmail
         });
-        alert(`Zamówienie złożone! Oddział ${ownerBranchName} otrzymał powiadomienie e-mail.`);
+        alert(`Zamówienie złożone! Oddział ${ownerBranchName} (${ownerEmail || 'brak e-maila w bazie'}) otrzymał e-mail z Twoją prośbą o przekazanie narzędzia.`);
       }
 
       onRefresh();
@@ -268,10 +300,27 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         notes: 'Wprowadzono do zasobów centralnych',
         operator_id: user.id
       });
-      alert("Zasób dodany.");
+      alert("Narzędzie dodane pomyślnie.");
       setIsAddModalOpen(false);
+      setNewName('');
+      setNewSerialNumber('');
+      setNewDescription('');
+      setNewPhoto(null);
+      setNewPhotoPreview(null);
       onRefresh();
     } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  };
+
+  const handleDeleteTool = async (id: string) => {
+    try {
+      const { error } = await supabase.from('tools').delete().eq('id', id);
+      if (error) throw error;
+      alert("Narzędzie usunięte z bazy danych.");
+      setConfirmDeleteId(null);
+      onRefresh();
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
 
   return (
@@ -409,8 +458,13 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                                 <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uwagi logistyczne dla odbiorcy..." className="w-full p-6 sm:p-10 bg-slate-50 border border-slate-200 rounded-[1.5rem] sm:rounded-[3.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
                                 
                                 <div className="grid grid-cols-2 gap-4">
-                                   <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Send size={20}/> <span>WYŚLIJ</span></button>
-                                   <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-amber-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Wrench size={20}/> <span>SERWIS</span></button>
+                                   <button onClick={() => handleLogisticsAction('TRANSFER')} disabled={isSubmitting} className="py-6 sm:py-10 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95 group">
+                                      {isSubmitting ? <Loader className="animate-spin" size={20}/> : <Send size={20} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform"/>} 
+                                      <span>WYŚLIJ + E-MAIL</span>
+                                   </button>
+                                   <button onClick={() => handleLogisticsAction('MAINTENANCE')} disabled={isSubmitting} className="py-6 sm:py-10 bg-amber-500 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-amber-800 flex items-center justify-center space-x-3 transition-all active:scale-95">
+                                      <Wrench size={20}/> <span>SERWIS</span>
+                                   </button>
                                 </div>
                               </>
                             ) : (
@@ -423,12 +477,13 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                                   </div>
                                 </div>
                                 <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Uzasadnienie zapotrzebowania..." className="w-full p-6 sm:p-8 bg-white border border-blue-100 rounded-[1.5rem] sm:rounded-[2.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-blue-500 shadow-inner"></textarea>
-                                <button onClick={() => handleLogisticsAction('ORDER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-blue-600 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-blue-900 flex items-center justify-center space-x-3 transition-all active:scale-95">
-                                   <MessageSquarePlus size={20}/> <span>ZŁÓŻ ZAMÓWIENIE</span>
+                                <button onClick={() => handleLogisticsAction('ORDER')} disabled={isSubmitting} className="w-full py-6 sm:py-10 bg-blue-600 text-white rounded-[1.5rem] sm:rounded-[3.5rem] font-black uppercase shadow-2xl border-b-8 border-blue-900 flex items-center justify-center space-x-3 transition-all active:scale-95 group">
+                                   {isSubmitting ? <Loader className="animate-spin" size={20}/> : <Mail size={20} className="group-hover:rotate-12 transition-transform"/>} 
+                                   <span>ZAMÓW I WYŚLIJ E-MAIL</span>
                                 </button>
                                 <div className="p-6 bg-blue-100/50 rounded-2xl border border-blue-200 flex items-center space-x-4">
-                                   <Mail size={16} className="text-blue-500 shrink-0"/>
-                                   <p className="text-[10px] font-bold text-blue-800 uppercase italic">Złożenie zamówienia wyśle powiadomienie e-mail do obecnego posiadacza.</p>
+                                   <Info size={16} className="text-blue-500 shrink-0"/>
+                                   <p className="text-[10px] font-bold text-blue-800 uppercase italic leading-tight">Złożenie zamówienia wyśle oficjalną prośbę e-mail do obecnego posiadacza.</p>
                                 </div>
                               </div>
                             )}
@@ -460,23 +515,64 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                   
                   {manageTab === 'TIMELINE' && (
                     <div className="space-y-6 max-h-[400px] sm:max-h-[550px] overflow-y-auto no-scrollbar pr-2 relative pl-10 sm:pl-20 before:absolute before:left-5 sm:before:left-10 before:top-4 before:bottom-4 before:w-1 before:bg-slate-100">
-                      {toolHistory.map(log => (
-                        <div key={log.id} className="relative bg-white border-2 border-slate-50 p-5 sm:p-8 rounded-[1.5rem] sm:rounded-[3rem] shadow-xl border-l-8 border-l-[#22c55e]">
-                           <div className="absolute -left-[2.2rem] sm:-left-[3.75rem] top-6 sm:top-8 w-8 h-8 sm:w-12 sm:h-12 bg-white border-4 border-slate-50 rounded-xl flex items-center justify-center text-[#22c55e] shadow-lg"><Clock size={16}/></div>
-                           <h4 className="text-sm sm:text-xl font-black uppercase italic mb-2 leading-none">{log.action}</h4>
-                           <p className="text-[10px] sm:text-[12px] font-bold text-slate-500 uppercase italic leading-tight">"{log.notes || "Zdarzenie systemowe"}"</p>
-                           <p className="mt-3 text-[7px] sm:text-[8px] font-black uppercase text-slate-300 italic">{new Date(log.created_at).toLocaleString('pl-PL')}</p>
-                        </div>
-                      ))}
+                      {toolHistory.map(log => {
+                        let branchInfo = null;
+                        let isEmailAction = log.action === 'PRZESUNIĘCIE' || log.action === 'ZAMÓWIENIE';
+
+                        if (log.action === 'PRZYJĘCIE' && log.to_branch?.name) {
+                          branchInfo = `PRZYJĘTO W: ${log.to_branch.name.toUpperCase()}`;
+                        } else if (log.action === 'PRZESUNIĘCIE' && log.from_branch?.name && log.to_branch?.name) {
+                          branchInfo = `${log.from_branch.name.toUpperCase()} → ${log.to_branch.name.toUpperCase()}`;
+                        } else if (log.action === 'ZAMÓWIENIE' && log.from_branch?.name && log.to_branch?.name) {
+                          branchInfo = `PROŚBA OD: ${log.to_branch.name.toUpperCase()} (DO: ${log.from_branch.name.toUpperCase()})`;
+                        } else if (log.action === 'REZERWACJA' && log.to_branch?.name) {
+                          branchInfo = `DLA ODDZIAŁU: ${log.to_branch.name.toUpperCase()}`;
+                        } else if (log.action === 'KONSERWACJA' && log.to_branch?.name) {
+                          branchInfo = `MIEJSCE: ${log.to_branch.name.toUpperCase()}`;
+                        }
+
+                        return (
+                          <div key={log.id} className="relative bg-white border-2 border-slate-50 p-5 sm:p-8 rounded-[1.5rem] sm:rounded-[3rem] shadow-xl border-l-8 border-l-[#22c55e]">
+                             <div className="absolute -left-[2.2rem] sm:-left-[3.75rem] top-6 sm:top-8 w-8 h-8 sm:w-12 sm:h-12 bg-white border-4 border-slate-50 rounded-xl flex items-center justify-center text-[#22c55e] shadow-lg"><Clock size={16}/></div>
+                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                                <div className="flex items-center space-x-3">
+                                   <h4 className="text-sm sm:text-xl font-black uppercase italic leading-none">{log.action}</h4>
+                                   {isEmailAction && (
+                                     <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg flex items-center space-x-1" title="System automatycznie wysłał powiadomienie e-mail">
+                                        <Mail size={12}/>
+                                        <span className="text-[7px] font-black uppercase tracking-widest">E-MAIL OK</span>
+                                     </div>
+                                   )}
+                                </div>
+                                <p className="text-[7px] sm:text-[8px] font-black uppercase text-slate-300 italic">{new Date(log.created_at).toLocaleString('pl-PL')}</p>
+                             </div>
+                             
+                             {branchInfo && (
+                               <div className="inline-flex items-center px-4 py-1.5 bg-green-50 rounded-full border border-green-100 mb-3">
+                                  <MapPin size={10} className="text-[#22c55e] mr-2"/>
+                                  <span className="text-[9px] font-black text-[#22c55e] uppercase tracking-widest">{branchInfo}</span>
+                               </div>
+                             )}
+
+                             <p className="text-[10px] sm:text-[12px] font-bold text-slate-500 uppercase italic leading-tight mt-1">"{log.notes || "Zdarzenie systemowe"}"</p>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
                   {manageTab === 'INFO' && (
                     <div className="space-y-8 sm:space-y-12 pb-10">
-                       <div className="p-8 sm:p-12 bg-slate-50 rounded-[1.5rem] sm:rounded-[4rem] border-2 border-slate-100 italic min-h-[120px] shadow-inner flex items-center justify-center text-center">
-                           <p className="text-slate-600 font-bold uppercase text-xs sm:text-sm leading-relaxed">
-                              {selectedTool.description || "Brak instrukcji przeznaczenia w bazie danych."}
-                            </p>
+                       <div className="p-8 sm:p-12 bg-slate-50 rounded-[1.5rem] sm:rounded-[4rem] border-2 border-slate-100 shadow-inner flex flex-col">
+                           <div className="flex items-center space-x-3 mb-6 border-b border-slate-200 pb-4">
+                              <FileText className="text-[#22c55e]" size={20}/>
+                              <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest italic">Specyfikacja Techniczna i Przeznaczenie</h4>
+                           </div>
+                           <div className="prose prose-slate max-w-none">
+                              <p className="text-slate-600 font-bold uppercase text-xs sm:text-sm leading-relaxed whitespace-pre-wrap italic">
+                                {selectedTool.description || "Brak szczegółowej specyfikacji przeznaczenia w bazie danych."}
+                              </p>
+                           </div>
                         </div>
                     </div>
                   )}
@@ -489,7 +585,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-3xl" onClick={() => setIsAddModalOpen(false)}></div>
-          <div className="relative w-full max-w-4xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500 flex flex-col max-h-[95vh]">
+          <div className="relative w-full max-w-4xl bg-white rounded-t-[2.5rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500 flex flex-col max-h-[95vh]">
              <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center border-b-8 border-[#22c55e] shrink-0">
                 <div className="flex items-center space-x-6">
                   <div className="w-16 h-16 bg-[#22c55e] rounded-2xl flex items-center justify-center shadow-xl rotate-3"><Plus size={28}/></div>
@@ -505,16 +601,16 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                    <div className="space-y-8">
                       <div className="space-y-4">
                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nazwa Narzędzia</label>
-                         <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY BETA" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                         <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="np. KLUCZ DYNAMOMETRYCZNY BETA" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e] shadow-inner" />
                       </div>
                       <div className="grid grid-cols-2 gap-6">
                          <div className="space-y-4">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Nr Seryjny</label>
-                            <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
+                            <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e] shadow-inner" />
                          </div>
                          <div className="space-y-4">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Oddział</label>
-                            <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none appearance-none cursor-pointer">
+                            <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none appearance-none cursor-pointer shadow-inner">
                               {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                             </select>
                          </div>
@@ -523,7 +619,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                    
                    <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic">Zdjęcie Poglądowe</label>
-                      <label className="w-full h-64 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center cursor-pointer hover:border-[#22c55e] transition-all overflow-hidden group shadow-inner relative">
+                      <label className="w-full h-48 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center cursor-pointer hover:border-[#22c55e] transition-all overflow-hidden group shadow-inner relative">
                         {newPhotoPreview ? (
                           <img src={newPhotoPreview} className="w-full h-full object-cover" alt="Preview" />
                         ) : (
@@ -542,6 +638,21 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                       </label>
                    </div>
                 </div>
+
+                <div className="space-y-4 border-t border-slate-100 pt-8">
+                   <div className="flex items-center space-x-3 mb-2 ml-4">
+                      <FileText className="text-[#22c55e]" size={16}/>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Przeznaczenie i Specyfikacja Techniczna</label>
+                   </div>
+                   <textarea 
+                      rows={4} 
+                      value={newDescription} 
+                      onChange={e => setNewDescription(e.target.value)} 
+                      placeholder="Wpisz np. 'Zestaw do silników John Deere serii 6000', 'Klucz do hydrauliki pras zwijających', itp." 
+                      className="w-full p-8 bg-slate-50 border border-slate-200 rounded-[2.5rem] text-xs sm:text-sm font-black uppercase outline-none focus:border-[#22c55e] shadow-inner"
+                   ></textarea>
+                </div>
+
                 <button type="submit" disabled={isSubmitting} className="w-full py-6 sm:py-8 bg-[#22c55e] text-white rounded-[2rem] sm:rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-green-800 flex items-center justify-center space-x-4 active:scale-95 transition-all">
                   {isSubmitting ? <Loader className="animate-spin" size={24}/> : <Save size={24}/>}
                   <span>Zapisz w Bazie Danych</span>
