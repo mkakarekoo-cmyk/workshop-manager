@@ -11,7 +11,6 @@ export interface Branch {
   id: string;
   name: string;
   location: string;
-  email?: string;
 }
 
 export interface Tool {
@@ -26,8 +25,8 @@ export interface Tool {
   photo_path?: string | null;
   shipped_at?: string | null;
   last_maintenance?: string | null;
-  current_branch?: { name: string, email?: string };
-  target_branch?: { name: string, email?: string };
+  current_branch?: { name: string };
+  target_branch?: { name: string };
 }
 
 export interface ToolReservation {
@@ -46,7 +45,7 @@ export interface ToolReservation {
 export interface ToolLog {
   id: string;
   tool_id: string;
-  action: 'WYDANIE' | 'PRZYJĘCIE' | 'PRZESUNIĘCIE' | 'KONSERWACJA' | 'REZERWACJA' | 'ZAMÓWIENIE';
+  action: 'WYDANIE' | 'PRZYJĘCIE' | 'PRZESUNIĘCIE' | 'KONSERWACJA' | 'REZERWACJA' | 'ZAMÓWIENIE' | 'ODMOWA';
   from_branch_id?: number | null;
   to_branch_id?: number | null;
   notes: string;
@@ -71,7 +70,7 @@ export interface User {
   assigned_van_id?: string | null;
 }
 
-export type ModuleType = 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK' | 'FLOTA' | 'WARSZTAT' | 'UŻYTKOWNICY';
+export type ModuleType = 'DASHBOARD' | 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK' | 'UŻYTKOWNICY';
 
 export interface AppNotification {
   id: string;
@@ -81,6 +80,7 @@ export interface AppNotification {
   created_at: string;
   is_read: boolean;
   tool_id?: string;
+  raw_log?: any;
 }
 
 export interface Vehicle {
