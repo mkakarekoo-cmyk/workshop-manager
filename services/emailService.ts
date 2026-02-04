@@ -13,13 +13,13 @@ export interface EmailPayload {
 
 /**
  * emailService - Integracja z Supabase Edge Functions i Resend.
- * Ten serwis wywołuje funkcję serwerową, która bezpiecznie wysyła e-mail.
  */
 export const emailService = {
   async sendNotification(payload: EmailPayload) {
     try {
       console.log(`[EmailService] Inicjowanie wysyłki do: ${payload.to}`);
       
+      // Wywołanie funkcji z jawnym złapaniem błędu sieciowego
       const { data, error } = await supabase.functions.invoke('resend-email', {
         body: {
           to: payload.to,
@@ -52,7 +52,7 @@ export const emailService = {
                 </div>
                 <div style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0;">
                   <p style="font-size: 11px; color: #94a3b8; margin: 0;">Wiadomość wygenerowana automatycznie. Prosimy nie odpowiadać na ten e-mail.</p>
-                  <p style="font-size: 11px; color: #94a3b8; margin: 4px 0;">© 2026 Contractus - System Zarządzania Zasobami</p>
+                  <p style="font-size: 11px; color: #94a3b8; margin: 4px 0;">© 2026 AgroNarzędziownia - System Zarządzania Zasobami</p>
                 </div>
               </div>
             </div>
@@ -61,13 +61,23 @@ export const emailService = {
       });
 
       if (error) {
-        console.error("[EmailService] Błąd funkcji Edge:", error);
+        // Jeśli błąd pochodzi z SDK Supabase (np. brak połączenia)
+        console.error("[EmailService] Błąd wywołania funkcji:", error);
+        
+        // Specyficzny błąd gdy funkcja nie istnieje lub jest źle skonfigurowany URL
+        if (error.message?.includes('Failed to send a request')) {
+          return { 
+            success: false, 
+            error: new Error("Nie można połączyć się z serwerem funkcji. Sprawdź czy funkcja 'resend-email' jest wdrożona (Deployed) w Supabase.") 
+          };
+        }
+        
         return { success: false, error };
       }
 
-      console.log("[EmailService] Powiadomienie wysłane pomyślnie.");
+      console.log("[EmailService] Odpowiedź serwera:", data);
       return { success: true, data };
-    } catch (e) {
+    } catch (e: any) {
       console.error("[EmailService] Błąd krytyczny:", e);
       return { success: false, error: e };
     }

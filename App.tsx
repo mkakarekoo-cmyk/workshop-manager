@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
@@ -10,16 +9,16 @@ import { User, ModuleType, Branch, AppNotification, ToolStatus } from './types';
 import { supabase } from './supabase';
 
 const MOCK_BRANCHES: Branch[] = [
-  { id: '1', name: 'Porosły (HUB)', location: 'Porosły', email: 'andrzej.chlabicz@contractus.com.pl, mateusz.kakareko@contractus.com.pl' },
-  { id: '2', name: 'Karniewo', location: 'Karniewo', email: 'serwis.karniewo@contractus.com.pl' },
-  { id: '3', name: 'Łomża', location: 'Łomża', email: 'mateusz.nicikowski@contractus.com.pl' },
-  { id: '4', name: 'Brzozów', location: 'Brzozów', email: 'paulina.zlotkowska@contractus.com.pl, serwis@contractus.com.pl' },
-  { id: '5', name: 'Suwałki', location: 'Suwałki', email: 'serwis.suwalki@contractus.com.pl' },
-  { id: '6', name: 'Serwis Porosły', location: 'Porosły', email: 'adam.wnorowski@contractus.com.pl' },
+  { id: '1', name: 'Porosły (HUB)', location: 'Porosły', email: 'andrzej.chlabicz@agronarzedziownia.com, mateusz.kakareko@agronarzedziownia.com' },
+  { id: '2', name: 'Karniewo', location: 'Karniewo', email: 'serwis.karniewo@agronarzedziownia.com' },
+  { id: '3', name: 'Łomża', location: 'Łomża', email: 'mateusz.nicikowski@agronarzedziownia.com' },
+  { id: '4', name: 'Brzozów', location: 'Brzozów', email: 'paulina.zlotkowska@agronarzedziownia.com, serwis@agronarzedziownia.com' },
+  { id: '5', name: 'Suwałki', location: 'Suwałki', email: 'serwis.suwalki@agronarzedziownia.com' },
+  { id: '6', name: 'Serwis Porosły', location: 'Porosły', email: 'adam.wnorowski@agronarzedziownia.com' },
 ];
 
 const MASTER_ADMIN_EMAIL = 'm.kakarekoo@gmail.com';
-const SPECIAL_USER_ADAM = 'adam.wnorowski@contractus.com.pl';
+const SPECIAL_USER_ADAM = 'adam.wnorowski@agronarzedziownia.com';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -281,7 +280,7 @@ const App: React.FC = () => {
           </div>
           <footer className="w-full py-16 sm:py-24 flex flex-col items-center justify-center space-y-4 sm:space-y-6 mt-10 sm:mt-20 border-t border-slate-100 bg-white/50 backdrop-blur-sm">
             <p className="text-slate-300 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.5em] sm:tracking-[1em] leading-none text-center px-4">
-              © 2026 Menadżer Narzędzi - System Logistyczny
+              © 2026 AgroNarzędziownia - System Logistyczny
             </p>
             <div className="flex items-center space-x-4 sm:space-x-6">
               <div className="h-[1px] w-8 sm:w-16 bg-slate-100"></div>
