@@ -24,8 +24,8 @@ const MOCK_BRANCHES: Branch[] = [
 const MASTER_ADMIN_EMAIL = 'm.kakarekoo@gmail.com';
 const SPECIAL_USER_ADAM = 'adam.wnorowski@contractus.com.pl';
 const SPECIAL_USER_KARNIEWO = 'serwis.karniewo@contractus.com.pl';
-const SPECIAL_USER_ANDRZEJ = 'andrzej.chlabicz@contractus.com.pl'; // Nowy doradca Porosły
-const SPECIAL_USER_MATEUSZ_HUB = 'mateusz.kakareko@contractus.com.pl'; // Nowy doradca Porosły
+const SPECIAL_USER_ANDRZEJ = 'andrzej.chlabicz@contractus.com.pl';
+const SPECIAL_USER_MATEUSZ_HUB = 'mateusz.kakareko@contractus.com.pl';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const [pendingOrder, setPendingOrder] = useState<AppNotification | null>(null);
   
   const lastProcessedIdRef = useRef<string | null>(null);
+  const processedOrdersRef = useRef<Set<string>>(new Set());
 
   const fetchAllUsers = useCallback(async () => {
     try {
@@ -66,13 +67,13 @@ const App: React.FC = () => {
         finalRole = 'ADMINISTRATOR';
       } else if (userEmail === SPECIAL_USER_ADAM.toLowerCase()) {
         finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '6'; // Serwis Porosły
+        finalBranch = '6'; 
       } else if (userEmail === SPECIAL_USER_KARNIEWO.toLowerCase()) {
         finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '2'; // Karniewo
+        finalBranch = '2'; 
       } else if (userEmail === SPECIAL_USER_ANDRZEJ.toLowerCase() || userEmail === SPECIAL_USER_MATEUSZ_HUB.toLowerCase()) {
         finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '1'; // Porosły (HUB)
+        finalBranch = '1'; 
       }
 
       const finalUser: User = {
@@ -86,7 +87,6 @@ const App: React.FC = () => {
       };
       
       setUser(finalUser);
-      // Jeśli admin, domyślnie otwórz Dashboard
       if (finalUser.role === 'ADMINISTRATOR') {
         setActiveModule('DASHBOARD');
       }
@@ -185,19 +185,23 @@ const App: React.FC = () => {
             };
           }).filter(n => n !== null);
 
-        if (mapped.length > 0) {
+        // Szukamy nieprzetworzonych zamówień skierowanych do nas
+        const unhandledOrder = mapped.find(n => 
+          n.raw_log?.action === 'ZAMÓWIENIE' && 
+          Number(n.raw_log?.from_branch_id) === branchNum &&
+          !processedOrdersRef.current.has(n.id)
+        );
+
+        if (unhandledOrder) {
+          setPendingOrder(unhandledOrder);
+          processedOrdersRef.current.add(unhandledOrder.id);
+          try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); } catch(e){}
+        } else if (mapped.length > 0) {
           const newest = mapped[0];
-          if (newest.id !== lastProcessedIdRef.current) {
-             const isOrderDirectedToMe = newest.raw_log?.action === 'ZAMÓWIENIE' && Number(newest.raw_log?.from_branch_id) === branchNum;
-             
-             if (isOrderDirectedToMe) {
-               setPendingOrder(newest);
-               try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); } catch(e){}
-             } else if (showToast) {
-               addToast(newest);
-               try { new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3').play().catch(() => {}); } catch(e){}
-             }
-             lastProcessedIdRef.current = newest.id;
+          if (newest.id !== lastProcessedIdRef.current && showToast) {
+            addToast(newest);
+            try { new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3').play().catch(() => {}); } catch(e){}
+            lastProcessedIdRef.current = newest.id;
           }
         }
         
@@ -234,14 +238,18 @@ const App: React.FC = () => {
     }
   };
 
+  // SUBSKRYPCJA REALTIME - REAGUJEMY NATYCHMIAST
   useEffect(() => {
     if (!user) return;
+
     const channel = supabase
-      .channel('schema-db-changes')
+      .channel('realtime-logistics')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'tool_logs' },
-        () => {
+        (payload) => {
+          // Gdy tylko wpadnie rekord, wymuszamy fetch z showToast=true
+          // To sprawi, że modal wyskoczy od razu
           fetchNotifications(true);
           setRefreshTrigger(prev => prev + 1);
         }
@@ -259,7 +267,12 @@ const App: React.FC = () => {
   };
 
   const handleNotificationClick = (n: AppNotification) => {
-    if (n.tool_id) {
+    const branchNum = Number(simulationBranchId === 'all' ? user?.branch_id : simulationBranchId);
+    const isOrderDirectedToMe = n.raw_log?.action === 'ZAMÓWIENIE' && Number(n.raw_log?.from_branch_id) === branchNum;
+
+    if (isOrderDirectedToMe) {
+      setPendingOrder(n);
+    } else if (n.tool_id) {
       setActiveModule('BAZA NARZĘDZI');
       setTargetToolId(n.tool_id);
     }
@@ -282,6 +295,7 @@ const App: React.FC = () => {
         fetchProfile(session.user.id, session.user.email);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        processedOrdersRef.current.clear();
       }
     });
     return () => authListener.subscription.unsubscribe();
