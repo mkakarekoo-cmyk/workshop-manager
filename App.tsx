@@ -23,6 +23,7 @@ const MOCK_BRANCHES: Branch[] = [
 
 const MASTER_ADMIN_EMAIL = 'm.kakarekoo@gmail.com';
 const SPECIAL_USER_ADAM = 'adam.wnorowski@contractus.com.pl';
+const SPECIAL_USER_KARNIEWO = 'serwis.karniewo@contractus.com.pl'; // Nowy użytkownik specjalny
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -64,6 +65,9 @@ const App: React.FC = () => {
       } else if (userEmail === SPECIAL_USER_ADAM.toLowerCase()) {
         finalRole = 'DORADCA SERWISOWY';
         finalBranch = '6'; // Serwis Porosły
+      } else if (userEmail === SPECIAL_USER_KARNIEWO.toLowerCase()) {
+        finalRole = 'DORADCA SERWISOWY';
+        finalBranch = '2'; // Karniewo
       }
 
       const finalUser: User = {
