@@ -23,10 +23,12 @@ interface ToolsModuleProps {
   viewMode: 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK';
   targetToolId?: string | null;
   onTargetToolClear?: () => void;
+  preselectedTargetBranchId?: string | null;
+  onPreselectedBranchClear?: () => void;
 }
 
 const ToolsModule: React.FC<ToolsModuleProps> = ({ 
-  user, simulationBranchId, branches, refreshTrigger, onRefresh, viewMode, targetToolId, onTargetToolClear
+  user, simulationBranchId, branches, refreshTrigger, onRefresh, viewMode, targetToolId, onTargetToolClear, preselectedTargetBranchId, onPreselectedBranchClear
 }) => {
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +85,18 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     }
   }, [targetToolId, onTargetToolClear]);
 
-  // Ustawienie domyślnej zakładki przy otwieraniu modala
+  // Ustawienie domyślnego oddziału wysyłki jeśli przyszło z zapytania
+  useEffect(() => {
+    if (selectedTool && preselectedTargetBranchId) {
+      setTransferBranchId(preselectedTargetBranchId);
+      if (onPreselectedBranchClear) onPreselectedBranchClear();
+    } else if (selectedTool) {
+      // Jeśli brak pre-selekcji, ustaw domyślnie pierwszy inny oddział niż obecny
+      const firstOther = branches.find(b => Number(b.id) !== Number(selectedTool.branch_id));
+      if (firstOther) setTransferBranchId(firstOther.id);
+    }
+  }, [selectedTool, preselectedTargetBranchId, branches, onPreselectedBranchClear]);
+
   useEffect(() => {
     if (selectedToolId) {
       if (isOwner || isRecipient) {
@@ -210,18 +223,19 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         alert(`Narzędzie wysłane!`);
       } 
       else if (action === 'RECEIPT') {
-        if (Number(selectedTool.target_branch_id) !== effectiveBranchId) {
+        // Poprawiony check odbiorcy - musi zgadzać się target_branch_id z moją lokalizacją
+        const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
+        if (Number(selectedTool.target_branch_id) !== myLoc) {
           throw new Error("Tylko oddział docelowy może potwierdzić odbiór!");
         }
-        const newStatus = targetId === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
-        await supabase.from('tools').update({ status: newStatus, branch_id: targetId, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
-        await createLog({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: targetId, notes: `Przyjęto fizycznie w bazie oddziału.`, operator_id: user.id });
+        const newStatus = myLoc === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
+        await supabase.from('tools').update({ status: newStatus, branch_id: myLoc, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
+        await createLog({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: myLoc, notes: `Przyjęto fizycznie w bazie oddziału.`, operator_id: user.id });
         alert("Narzędzie przyjęte na stan.");
       } 
       else if (action === 'ORDER') {
         let orderNote = notes || 'Potrzeba oddziału';
         
-        // Jeśli podano daty, utwórz rezerwację automatycznie
         if (resStartDate && resEndDate) {
           await supabase.from('tool_reservations').insert({
              tool_id: selectedTool.id,
@@ -386,6 +400,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                   onDelete={(id: string) => setConfirmDeleteId(id)}
                   confirmDeleteId={confirmDeleteId}
                   handleDeleteTool={handleDeleteTool}
+                  simulationBranchId={simulationBranchId}
                 />
               ))}
             </tbody>
@@ -394,7 +409,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
         <div className="lg:hidden p-4 space-y-4">
            {tools.map(tool => (
-             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} />
+             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} />
            ))}
         </div>
       </div>
@@ -434,7 +449,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {manageTab === 'LOGISTYKA' && (isOwner || isRecipient) && (
                     <div className="space-y-8">
-                       {selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === effectiveBranchId ? (
+                       {selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === (simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId)) ? (
                          <div className="p-10 bg-blue-50 rounded-[3rem] text-center space-y-6">
                             <Truck size={48} className="mx-auto text-blue-500 animate-bounce" />
                             <h4 className="text-3xl font-black text-blue-900 uppercase italic">PRZESYŁKA CZEKA NA ODBIÓR</h4>
@@ -582,10 +597,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   );
 };
 
-const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, confirmDeleteId, handleDeleteTool }: any) => {
+const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, confirmDeleteId, handleDeleteTool, simulationBranchId }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
-  const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === Number(effectiveBranchId);
-  const isHeadingElsewhere = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) !== Number(effectiveBranchId);
+  const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
+  const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
+  const isHeadingElsewhere = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) !== myLoc;
   const isAdmin = user.role === 'ADMINISTRATOR';
   const isConfirming = confirmDeleteId === tool.id;
 
@@ -650,10 +666,11 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
   );
 };
 
-const ToolCard = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl }: any) => {
+const ToolCard = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, simulationBranchId }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
-  const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === Number(effectiveBranchId);
-  const isHeadingElsewhere = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) !== Number(effectiveBranchId);
+  const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
+  const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
+  const isHeadingElsewhere = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) !== myLoc;
   
   return (
     <div className={`bg-white p-6 rounded-[2rem] border-2 shadow-xl flex flex-col space-y-6 ${isPhysicallyHere ? 'border-[#22c55e]/40' : 'border-slate-100'}`}>

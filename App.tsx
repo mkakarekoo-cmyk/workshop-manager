@@ -40,6 +40,7 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [targetToolId, setTargetToolId] = useState<string | null>(null);
+  const [preselectedTargetBranchId, setPreselectedTargetBranchId] = useState<string | null>(null);
   const [pendingOrder, setPendingOrder] = useState<AppNotification | null>(null);
   
   const lastProcessedIdRef = useRef<string | null>(null);
@@ -185,11 +186,12 @@ const App: React.FC = () => {
             };
           }).filter(n => n !== null);
 
-        // Szukamy nieprzetworzonych zamówień skierowanych do nas
+        // Szukamy nieprzetworzonych zamówień skierowanych do nas, które NIE są jeszcze w transporcie
         const unhandledOrder = mapped.find(n => 
           n.raw_log?.action === 'ZAMÓWIENIE' && 
           Number(n.raw_log?.from_branch_id) === branchNum &&
-          !processedOrdersRef.current.has(n.id)
+          !processedOrdersRef.current.has(n.id) &&
+          n.raw_log?.tool?.status !== 'W DRODZE' // Krytyczne: nie pokazuj modalnego jeśli już wysłane
         );
 
         if (unhandledOrder) {
@@ -216,6 +218,8 @@ const App: React.FC = () => {
     if (order.tool_id) {
       setActiveModule('BAZA NARZĘDZI');
       setTargetToolId(order.tool_id);
+      // Przekaż oddział, który prosił o narzędzie do ToolsModule
+      setPreselectedTargetBranchId(String(order.raw_log.to_branch_id));
     }
     setPendingOrder(null);
   };
@@ -238,7 +242,6 @@ const App: React.FC = () => {
     }
   };
 
-  // SUBSKRYPCJA REALTIME - REAGUJEMY NATYCHMIAST
   useEffect(() => {
     if (!user) return;
 
@@ -248,8 +251,6 @@ const App: React.FC = () => {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'tool_logs' },
         (payload) => {
-          // Gdy tylko wpadnie rekord, wymuszamy fetch z showToast=true
-          // To sprawi, że modal wyskoczy od razu
           fetchNotifications(true);
           setRefreshTrigger(prev => prev + 1);
         }
@@ -386,6 +387,8 @@ const App: React.FC = () => {
                   viewMode={activeModule as any} 
                   targetToolId={targetToolId}
                   onTargetToolClear={() => setTargetToolId(null)}
+                  preselectedTargetBranchId={preselectedTargetBranchId}
+                  onPreselectedBranchClear={() => setPreselectedTargetBranchId(null)}
                />
              )}
              {activeModule === 'UŻYTKOWNICY' && (
