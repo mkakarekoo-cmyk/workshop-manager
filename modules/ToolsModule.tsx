@@ -5,7 +5,8 @@ import {
   MapPin, X, Save, Loader, ZoomIn, History, ArrowRightLeft, 
   Clock, Edit2, PackageCheck, Send, Info, Settings, Building2, 
   ChevronLeft, ChevronRight, MapPinned, Archive, Camera, ArrowRight, ShieldAlert,
-  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar, MessageSquarePlus, Mail, FileText, Database, Copy
+  Hammer, BookmarkPlus, ShoppingBag, Eye, UploadCloud, Calendar, MessageSquarePlus, Mail, FileText, Database, Copy,
+  Tag, Filter
 } from 'lucide-react';
 import { Tool, ToolStatus, User, Branch, ToolLog } from '../types';
 import Lightbox from '../components/Lightbox';
@@ -13,6 +14,15 @@ import { supabase } from '../supabase';
 
 const PAGE_SIZE = 50;
 const SUPABASE_URL = 'https://cuctnnsgvxhomxobpchi.supabase.co';
+
+// Stałe wartości kategorii, aby uniknąć literówek
+const BRANDS = {
+  JD: 'JOHN DEERE',
+  CLAAS: 'CLAAS',
+  GENERAL: 'NARZĘDZIA OGÓLNE'
+} as const;
+
+type BrandCategory = 'ALL' | typeof BRANDS.JD | typeof BRANDS.CLAAS | typeof BRANDS.GENERAL;
 
 interface ToolsModuleProps {
   user: User;
@@ -34,6 +44,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedBrand, setSelectedBrand] = useState<BrandCategory>('ALL');
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   
@@ -54,6 +65,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [newName, setNewName] = useState('');
   const [newSerialNumber, setNewSerialNumber] = useState('');
   const [newBranchId, setNewBranchId] = useState('1');
+  const [newCategory, setNewCategory] = useState<string>(BRANDS.JD);
   const [newDescription, setNewDescription] = useState('');
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [newPhotoPreview, setNewPhotoPreview] = useState<string | null>(null);
@@ -64,6 +76,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [editName, setEditName] = useState('');
   const [editSerialNumber, setEditSerialNumber] = useState('');
   const [editBranchId, setEditBranchId] = useState('1');
+  const [editCategory, setEditCategory] = useState<string>(BRANDS.JD);
   const [editDescription, setEditDescription] = useState('');
   const [editPhoto, setEditPhoto] = useState<File | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
@@ -142,6 +155,10 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         query = query.eq('branch_id', effectiveBranchId);
       } 
 
+      if (selectedBrand !== 'ALL') {
+        query = query.eq('category', selectedBrand);
+      }
+
       if (searchTerm) {
         query = query.or(`name.ilike.%${searchTerm}%,serial_number.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
       }
@@ -153,11 +170,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         if (isLoadMore) setOffset(currentOffset);
       }
     } catch (e) { console.error(e); } finally { setLoading(false); setLoadingMore(false); }
-  }, [viewMode, simulationBranchId, searchTerm, effectiveBranchId, offset]);
+  }, [viewMode, simulationBranchId, searchTerm, selectedBrand, effectiveBranchId, offset]);
 
   useEffect(() => {
     fetchTools();
-  }, [refreshTrigger, viewMode, simulationBranchId, searchTerm, effectiveBranchId]);
+  }, [refreshTrigger, viewMode, simulationBranchId, searchTerm, selectedBrand, effectiveBranchId]);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -279,7 +296,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     try {
       let photo_path = null;
       if (newPhoto) {
-        const fileName = `tool_${Date.now()}_${newSerialNumber}.jpg`;
+        const fileName = `tool_${Date.now()}_${newSerialNumber.replace(/\s+/g, '_')}.jpg`;
         const { error: uploadError } = await supabase.storage.from('tool-photos').upload(fileName, newPhoto);
         if (uploadError) throw uploadError;
         photo_path = fileName;
@@ -291,23 +308,27 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         status: ToolStatus.FREE,
         description: newDescription,
         photo_path,
-        category: 'NARZĘDZIA WARSZTATOWE'
+        category: newCategory
       }]).select().single();
+      
       if (error) throw error;
+      
       await createLog({
         tool_id: tool.id,
         action: 'PRZYJĘCIE',
         to_branch_id: Number(newBranchId),
-        notes: 'Wprowadzono do zasobów centralnych',
+        notes: `Wprowadzono do zasobów centralnych (${newCategory})`,
         operator_id: user.id
       });
-      alert("Zasób dodany.");
+      
+      alert(`Dodano narzędzie ${newName} do kategorii ${newCategory}.`);
       setIsAddModalOpen(false);
       setNewName('');
       setNewSerialNumber('');
       setNewDescription('');
       setNewPhoto(null);
       setNewPhotoPreview(null);
+      setSelectedBrand('ALL'); // Przełącz na widok wszystkich, by zobaczyć nowy element
       onRefresh();
     } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
@@ -317,6 +338,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     setEditName(tool.name);
     setEditSerialNumber(tool.serial_number);
     setEditBranchId(String(tool.branch_id));
+    setEditCategory(tool.category || BRANDS.JD);
     setEditDescription(tool.description || '');
     setEditPhoto(null);
     setEditPhotoPreview(getToolImageUrl(tool.photo_path));
@@ -330,7 +352,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     try {
       let photo_path = editingTool.photo_path;
       if (editPhoto) {
-        const fileName = `tool_${Date.now()}_${editSerialNumber}.jpg`;
+        const fileName = `tool_${Date.now()}_${editSerialNumber.replace(/\s+/g, '_')}.jpg`;
         const { error: uploadError } = await supabase.storage.from('tool-photos').upload(fileName, editPhoto);
         if (uploadError) throw uploadError;
         photo_path = fileName;
@@ -343,6 +365,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           serial_number: editSerialNumber,
           branch_id: Number(editBranchId),
           description: editDescription,
+          category: editCategory,
           photo_path
         })
         .eq('id', editingTool.id);
@@ -352,7 +375,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       await createLog({
         tool_id: editingTool.id,
         action: 'PRZYJĘCIE',
-        notes: `Aktualizacja danych technicznych i wizualnych zasobu. Operator: ${user.email}`,
+        notes: `Aktualizacja danych technicznych/wizualnych (${editCategory}). Operator: ${user.email}`,
         operator_id: user.id
       });
 
@@ -392,6 +415,14 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         <StatCard label="DOSTĘPNE" color="green" icon={<CheckCircle size={20}/>} value={tools.filter(t => t.status === ToolStatus.FREE).length} />
       </div>
 
+      {/* Brand Switcher Bar */}
+      <div className="flex bg-slate-100 p-2 rounded-[2rem] sm:rounded-[3rem] shadow-inner overflow-x-auto no-scrollbar gap-2">
+         <BrandTab active={selectedBrand === 'ALL'} onClick={() => setSelectedBrand('ALL')} icon={<Filter size={16}/>} label="WSZYSTKIE" color="bg-slate-800" />
+         <BrandTab active={selectedBrand === BRANDS.JD} onClick={() => setSelectedBrand(BRANDS.JD)} icon={<div className="w-3 h-3 bg-yellow-400 rounded-full"/>} label="JOHN DEERE" color="bg-green-700" />
+         <BrandTab active={selectedBrand === BRANDS.CLAAS} onClick={() => setSelectedBrand(BRANDS.CLAAS)} icon={<div className="w-3 h-3 bg-white rounded-full"/>} label="CLAAS" color="bg-red-600" />
+         <BrandTab active={selectedBrand === BRANDS.GENERAL} onClick={() => setSelectedBrand(BRANDS.GENERAL)} icon={<Hammer size={16}/>} label="OGÓLNE" color="bg-slate-600" />
+      </div>
+
       <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-6 bg-[#0f172a] p-6 sm:p-10 rounded-[2rem] lg:rounded-[4rem] shadow-2xl border-b-8 border-[#22c55e]">
         <div className="relative z-10">
           <h2 className="text-2xl sm:text-5xl font-black text-white uppercase italic tracking-tighter leading-none mb-2 sm:mb-3">{viewMode}</h2>
@@ -400,9 +431,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                 <MapPinned size={16}/>
              </div>
              <p className="text-[#22c55e] text-[9px] sm:text-[11px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] italic">
-               {viewMode === 'BAZA NARZĘDZI' 
-                 ? 'WSZYSTKIE ODDZIAŁY SYSTEMU' 
-                 : `TWOJA LOKALIZACJA: ${branches.find(b => String(b.id) === String(effectiveBranchId))?.name.toUpperCase()}`}
+               {selectedBrand !== 'ALL' ? `KATEGORIA: ${selectedBrand}` : viewMode === 'BAZA NARZĘDZI' ? 'WSZYSTKIE ODDZIAŁY' : `TWOJA LOKALIZACJA: ${branches.find(b => String(b.id) === String(effectiveBranchId))?.name.toUpperCase()}`}
              </p>
           </div>
         </div>
@@ -439,7 +468,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                 <tr>
                    <td colSpan={4} className="px-12 py-32 text-center">
                       <Package size={64} className="mx-auto text-slate-100 mb-6" />
-                      <p className="text-slate-300 font-black uppercase tracking-widest text-xs italic">Brak narzędzi</p>
+                      <p className="text-slate-300 font-black uppercase tracking-widest text-xs italic">Brak narzędzi w tej kategorii</p>
                    </td>
                 </tr>
               ) : tools.map(tool => (
@@ -456,6 +485,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                   confirmDeleteId={confirmDeleteId}
                   handleDeleteTool={handleDeleteTool}
                   simulationBranchId={simulationBranchId}
+                  BRANDS={BRANDS}
                 />
               ))}
             </tbody>
@@ -464,7 +494,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
         <div className="lg:hidden p-4 space-y-4">
            {tools.map(tool => (
-             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} onEdit={() => handleOpenEdit(tool)} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} />
+             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} onEdit={() => handleOpenEdit(tool)} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} BRANDS={BRANDS} />
            ))}
         </div>
       </div>
@@ -479,9 +509,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                     <img src={getToolImageUrl(selectedTool.photo_path)} className="w-full h-full object-cover opacity-80" alt="" />
                  </div>
                  <div className="min-w-0">
+                   <div className="flex items-center space-x-3 mb-2">
+                     <span className={`px-3 py-1 rounded-lg text-[7px] font-black uppercase tracking-widest ${selectedTool.category === BRANDS.JD ? 'bg-green-600' : selectedTool.category === BRANDS.CLAAS ? 'bg-red-600' : 'bg-slate-600'}`}>{selectedTool.category}</span>
+                   </div>
                    <h3 className="text-lg sm:text-4xl font-black uppercase tracking-tighter italic leading-none truncate">{selectedTool.name}</h3>
                    <div className="flex items-center space-x-4 mt-2 sm:mt-4">
-                      <span className={`px-4 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest ${(isOwner || isRecipient) ? 'bg-[#22c55e] text-white' : 'bg-amber-500 text-white'}`}>
+                      <span className={`px-4 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest ${(isOwner || isRecipient) ? 'bg-[#22c55e] text-white' : 'bg-amber-50 text-white'}`}>
                         {(isOwner || isRecipient) ? 'TWÓJ ZASÓB' : 'NARZĘDZIE ODDZIAŁU'}
                       </span>
                    </div>
@@ -622,27 +655,39 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
              <form onSubmit={handleAddTool} className="p-8 sm:p-12 space-y-8 overflow-y-auto no-scrollbar">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                    <div className="space-y-6">
-                      <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nazwa Narzędzia" className="w-full px-8 py-5 bg-slate-50 border rounded-[2rem] font-black uppercase" />
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Marka / Kategoria</label>
+                        <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border rounded-xl font-black uppercase outline-none focus:border-[#22c55e]">
+                          <option value={BRANDS.JD}>{BRANDS.JD}</option>
+                          <option value={BRANDS.CLAAS}>{BRANDS.CLAAS}</option>
+                          <option value={BRANDS.GENERAL}>{BRANDS.GENERAL}</option>
+                        </select>
+                      </div>
+                      <input required type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nazwa Narzędzia" className="w-full px-8 py-5 bg-slate-50 border rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]" />
                       <div className="grid grid-cols-2 gap-4">
-                         <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-6 py-4 bg-slate-50 border rounded-xl font-black uppercase" />
-                         <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border rounded-xl font-black uppercase">
+                         <input required type="text" value={newSerialNumber} onChange={e => setNewSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-6 py-4 bg-slate-50 border rounded-xl font-black uppercase outline-none focus:border-[#22c55e]" />
+                         <select value={newBranchId} onChange={e => setNewBranchId(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border rounded-xl font-black uppercase outline-none focus:border-[#22c55e]">
                            {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                          </select>
                       </div>
                    </div>
-                   <label className="relative w-full h-40 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden group hover:border-[#22c55e] transition-colors">
-                      {newPhotoPreview ? <img src={newPhotoPreview} className="w-full h-full object-cover" /> : <Camera size={32} className="text-slate-300" />}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all">
-                        <UploadCloud size={32} className="text-white mb-2" />
-                        <span className="text-white text-[8px] font-black uppercase tracking-widest">Wgraj Zdjęcie</span>
-                      </div>
-                      <input type="file" className="hidden" accept="image/*" onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) { setNewPhoto(file); setNewPhotoPreview(URL.createObjectURL(file)); }
-                      }} />
-                   </label>
+                   <div className="relative">
+                      <label className="relative block w-full h-40 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] cursor-pointer overflow-hidden group hover:border-[#22c55e] transition-colors">
+                        <div className="flex flex-col items-center justify-center w-full h-full">
+                           {newPhotoPreview ? <img src={newPhotoPreview} className="w-full h-full object-cover" /> : <Camera size={32} className="text-slate-300" />}
+                        </div>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all pointer-events-none">
+                           <UploadCloud size={32} className="text-white mb-2" />
+                           <span className="text-white text-[8px] font-black uppercase tracking-widest">Wgraj Zdjęcie</span>
+                        </div>
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                           const file = e.target.files?.[0];
+                           if (file) { setNewPhoto(file); setNewPhotoPreview(URL.createObjectURL(file)); }
+                        }} />
+                      </label>
+                   </div>
                 </div>
-                <textarea rows={3} value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Specyfikacja techniczna..." className="w-full p-8 bg-slate-50 border rounded-[2rem] font-black uppercase"></textarea>
+                <textarea rows={3} value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="Specyfikacja techniczna..." className="w-full p-8 bg-slate-50 border rounded-[2rem] font-black uppercase outline-none focus:border-[#22c55e]"></textarea>
                 <button type="submit" disabled={isSubmitting} className="w-full py-8 bg-[#22c55e] text-white rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-green-800">
                   {isSubmitting ? <Loader className="animate-spin mx-auto" size={24}/> : "DODAJ DO SYSTEMU"}
                 </button>
@@ -667,28 +712,38 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
              <form onSubmit={handleUpdateTool} className="p-8 sm:p-12 space-y-8 overflow-y-auto no-scrollbar relative">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Nazwa Zasobu</label>
-                        <input required type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nazwa Narzędzia" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-amber-500 shadow-inner" />
-                      </div>
                       <div className="grid grid-cols-2 gap-4">
                          <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Numer Seryjny</label>
-                            <input required type="text" value={editSerialNumber} onChange={e => setEditSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl font-black uppercase outline-none focus:border-amber-500 shadow-inner" />
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Marka</label>
+                           <select value={editCategory} onChange={e => setEditCategory(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl font-black uppercase outline-none focus:border-amber-500">
+                             <option value={BRANDS.JD}>{BRANDS.JD}</option>
+                             <option value={BRANDS.CLAAS}>{BRANDS.CLAAS}</option>
+                             <option value={BRANDS.GENERAL}>{BRANDS.GENERAL}</option>
+                           </select>
                          </div>
                          <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Lokalizacja</label>
-                            <select value={editBranchId} onChange={e => setEditBranchId(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl font-black uppercase outline-none focus:border-amber-500 shadow-inner cursor-pointer">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Lokalizacja</label>
+                            <select value={editBranchId} onChange={e => setEditBranchId(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-black uppercase outline-none focus:border-amber-500 shadow-inner">
                               {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                             </select>
                          </div>
                       </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Nazwa Zasobu</label>
+                        <input required type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nazwa Narzędzia" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-amber-500 shadow-inner" />
+                      </div>
+                      <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Numer Seryjny</label>
+                          <input required type="text" value={editSerialNumber} onChange={e => setEditSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl font-black uppercase outline-none focus:border-amber-500 shadow-inner" />
+                      </div>
                    </div>
                    <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Dokumentacja Wizualna</label>
-                      <label className="relative w-full h-40 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden group hover:border-amber-500 transition-colors shadow-inner">
-                          {editPhotoPreview ? <img src={editPhotoPreview} className="w-full h-full object-cover" /> : <Camera size={32} className="text-slate-300" />}
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all">
+                      <label className="relative block w-full h-48 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] cursor-pointer overflow-hidden group hover:border-amber-500 transition-colors shadow-inner">
+                          <div className="flex flex-col items-center justify-center w-full h-full">
+                            {editPhotoPreview ? <img src={editPhotoPreview} className="w-full h-full object-cover" /> : <Camera size={32} className="text-slate-300" />}
+                          </div>
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all pointer-events-none">
                             <UploadCloud size={32} className="text-white mb-2" />
                             <span className="text-white text-[8px] font-black uppercase tracking-widest">Zmień Zdjęcie</span>
                           </div>
@@ -717,13 +772,19 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   );
 };
 
-const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, onEdit, confirmDeleteId, handleDeleteTool, simulationBranchId }: any) => {
+const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, onEdit, confirmDeleteId, handleDeleteTool, simulationBranchId, BRANDS }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
   const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
   const isHeadingElsewhere = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) !== myLoc;
   const isAdmin = user.role === 'ADMINISTRATOR';
   const isConfirming = confirmDeleteId === tool.id;
+
+  const brandStyles: any = {
+    [BRANDS.JD]: 'bg-green-600 text-white',
+    [BRANDS.CLAAS]: 'bg-red-600 text-white',
+    [BRANDS.GENERAL]: 'bg-slate-600 text-white'
+  };
 
   return (
     <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isPhysicallyHere ? 'bg-green-50/20 border-l-8 border-l-[#22c55e]' : ''} ${isHeadingToThisBranch ? 'bg-blue-50/50 ring-4 ring-blue-500/20' : ''}`}>
@@ -733,6 +794,9 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
             <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover group-hover/img:scale-110 transition-transform" alt="" />
           </div>
           <div className="max-w-md">
+            <div className="flex items-center space-x-3 mb-2">
+               <span className={`px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${brandStyles[tool.category] || 'bg-slate-100 text-slate-500'}`}>{tool.category || 'INNE'}</span>
+            </div>
             <p className="font-black text-[#0f172a] uppercase text-base tracking-tighter italic leading-none">{tool.name}</p>
             <div className="flex items-center mt-2">
                {(isPhysicallyHere || isHeadingToThisBranch) && <span className="text-[8px] font-black text-[#22c55e] uppercase tracking-widest mr-3 flex items-center bg-white px-2 py-0.5 rounded border border-green-100"><CheckCircle size={10} className="mr-1"/> {isHeadingToThisBranch ? 'TWOJA PRZESYŁKA' : 'TWÓJ ZASÓB'}</span>}
@@ -796,19 +860,26 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
   );
 };
 
-const ToolCard = ({ tool, effectiveBranchId, user, onSelect, onEdit, getToolImageUrl, simulationBranchId }: any) => {
+const ToolCard = ({ tool, effectiveBranchId, user, onSelect, onEdit, getToolImageUrl, simulationBranchId, BRANDS }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
   const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
   const isHeadingElsewhere = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) !== myLoc;
   const isAdmin = user.role === 'ADMINISTRATOR';
   
+  const brandStyles: any = {
+    [BRANDS.JD]: 'bg-green-600 text-white',
+    [BRANDS.CLAAS]: 'bg-red-600 text-white',
+    [BRANDS.GENERAL]: 'bg-slate-600 text-white'
+  };
+
   return (
     <div className={`bg-white p-6 rounded-[2rem] border-2 shadow-xl flex flex-col space-y-6 ${isPhysicallyHere ? 'border-[#22c55e]/40' : 'border-slate-100'}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-5">
-          <div className="w-20 h-20 bg-slate-50 rounded-2xl overflow-hidden shrink-0 border-2 border-white shadow-lg">
+          <div className="w-20 h-20 bg-slate-50 rounded-2xl overflow-hidden shrink-0 border-2 border-white shadow-lg relative">
              <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover" alt="" />
+             <div className={`absolute top-1 left-1 px-2 py-0.5 rounded text-[5px] font-black uppercase tracking-widest ${brandStyles[tool.category] || 'bg-slate-100'}`}>{tool.category || 'INNE'}</div>
           </div>
           <div className="min-w-0 flex-1">
             <h4 className="text-lg font-black uppercase italic tracking-tighter text-[#0f172a] truncate leading-none">{tool.name}</h4>
@@ -859,6 +930,19 @@ const StatCard = ({ label, value, color, icon }: any) => {
 const ManageTab = ({ active, onClick, icon, label }: any) => (
   <button onClick={onClick} className={`flex-1 flex items-center justify-center space-x-3 px-4 py-4 sm:px-10 sm:py-7 rounded-[1.2rem] sm:rounded-[2.5rem] text-[10px] font-black uppercase tracking-widest transition-all italic shrink-0 ${active ? 'bg-[#0f172a] text-[#22c55e] shadow-xl' : 'text-slate-400'}`}>
     {icon}<span className="hidden sm:inline">{label}</span>
+  </button>
+);
+
+const BrandTab = ({ active, onClick, icon, label, color }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`flex items-center space-x-3 px-8 py-4 rounded-[1.5rem] sm:rounded-[2.5rem] text-[10px] font-black uppercase tracking-widest transition-all italic shrink-0 shadow-sm border-2 ${
+      active 
+        ? `${color} text-white border-white/20 shadow-xl scale-105` 
+        : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300'
+    }`}
+  >
+    {icon} <span>{label}</span>
   </button>
 );
 
