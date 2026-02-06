@@ -44,7 +44,15 @@ const App: React.FC = () => {
   const [pendingOrder, setPendingOrder] = useState<AppNotification | null>(null);
   
   const lastProcessedIdRef = useRef<string | null>(null);
-  const processedOrdersRef = useRef<Set<string>>(new Set());
+  // Trwała pamięć obsłużonych ID zamówień (aby nie wyskakiwały po odświeżeniu)
+  const [processedOrderIds, setProcessedOrderIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('processed_order_ids');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('processed_order_ids', JSON.stringify(processedOrderIds));
+  }, [processedOrderIds]);
 
   const fetchAllUsers = useCallback(async () => {
     try {
@@ -186,21 +194,24 @@ const App: React.FC = () => {
             };
           }).filter(n => n !== null);
 
-        // Szukamy nieprzetworzonych zamówień skierowanych do nas, które NIE są jeszcze w transporcie
+        // Szukamy nieprzetworzonych zamówień skierowanych do nas
         const unhandledOrder = mapped.find(n => 
           n.raw_log?.action === 'ZAMÓWIENIE' && 
           Number(n.raw_log?.from_branch_id) === branchNum &&
-          !processedOrdersRef.current.has(n.id) &&
-          n.raw_log?.tool?.status !== 'W DRODZE' // Krytyczne: nie pokazuj modalnego jeśli już wysłane
+          !processedOrderIds.includes(n.id) &&
+          n.raw_log?.tool?.status !== 'W DRODZE'
         );
 
         if (unhandledOrder) {
           setPendingOrder(unhandledOrder);
-          processedOrdersRef.current.add(unhandledOrder.id);
+          // Nie dodajemy jeszcze do processedOrderIds, zrobimy to po kliknięciu guzika
           try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); } catch(e){}
         } else if (mapped.length > 0) {
           const newest = mapped[0];
-          if (newest.id !== lastProcessedIdRef.current && showToast) {
+          const logAgeMs = Date.now() - new Date(newest.created_at).getTime();
+          
+          // Wyświetl Toast tylko jeśli zdarzenie jest świeże (max 2 minuty) i nowe
+          if (newest.id !== lastProcessedIdRef.current && showToast && logAgeMs < 120000) {
             addToast(newest);
             try { new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3').play().catch(() => {}); } catch(e){}
             lastProcessedIdRef.current = newest.id;
@@ -212,13 +223,15 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Sync Error:", e);
     }
-  }, [user, simulationBranchId, lastReadAt]);
+  }, [user, simulationBranchId, lastReadAt, processedOrderIds]);
 
   const handleConfirmOrder = (order: AppNotification) => {
+    // Zapamiętaj, że to zamówienie zostało obsłużone
+    setProcessedOrderIds(prev => [...new Set([...prev, order.id])]);
+    
     if (order.tool_id) {
       setActiveModule('BAZA NARZĘDZI');
       setTargetToolId(order.tool_id);
-      // Przekaż oddział, który prosił o narzędzie do ToolsModule
       setPreselectedTargetBranchId(String(order.raw_log.to_branch_id));
     }
     setPendingOrder(null);
@@ -227,6 +240,9 @@ const App: React.FC = () => {
   const handleRejectOrder = async (order: AppNotification) => {
     if (!user) return;
     try {
+      // Zapamiętaj, że to zamówienie zostało obsłużone
+      setProcessedOrderIds(prev => [...new Set([...prev, order.id])]);
+
       await supabase.from('tool_logs').insert({
         tool_id: order.tool_id,
         action: 'ODMOWA',
@@ -250,7 +266,7 @@ const App: React.FC = () => {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'tool_logs' },
-        (payload) => {
+        () => {
           fetchNotifications(true);
           setRefreshTrigger(prev => prev + 1);
         }
@@ -296,7 +312,8 @@ const App: React.FC = () => {
         fetchProfile(session.user.id, session.user.email);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
-        processedOrdersRef.current.clear();
+        localStorage.removeItem('processed_order_ids');
+        setProcessedOrderIds([]);
       }
     });
     return () => authListener.subscription.unsubscribe();
