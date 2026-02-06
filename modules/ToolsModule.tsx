@@ -49,6 +49,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [resStartDate, setResStartDate] = useState('');
   const [resEndDate, setResEndDate] = useState('');
 
+  // Add Tool Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newSerialNumber, setNewSerialNumber] = useState('');
@@ -56,6 +57,16 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [newDescription, setNewDescription] = useState('');
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [newPhotoPreview, setNewPhotoPreview] = useState<string | null>(null);
+
+  // Edit Tool Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTool, setEditingTool] = useState<Tool | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSerialNumber, setEditSerialNumber] = useState('');
+  const [editBranchId, setEditBranchId] = useState('1');
+  const [editDescription, setEditDescription] = useState('');
+  const [editPhoto, setEditPhoto] = useState<File | null>(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
 
   const [showRlsFix, setShowRlsFix] = useState(false);
 
@@ -85,13 +96,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     }
   }, [targetToolId, onTargetToolClear]);
 
-  // Ustawienie domyślnego oddziału wysyłki jeśli przyszło z zapytania
   useEffect(() => {
     if (selectedTool && preselectedTargetBranchId) {
       setTransferBranchId(preselectedTargetBranchId);
       if (onPreselectedBranchClear) onPreselectedBranchClear();
     } else if (selectedTool) {
-      // Jeśli brak pre-selekcji, ustaw domyślnie pierwszy inny oddział niż obecny
       const firstOther = branches.find(b => Number(b.id) !== Number(selectedTool.branch_id));
       if (firstOther) setTransferBranchId(firstOther.id);
     }
@@ -223,7 +232,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         alert(`Narzędzie wysłane!`);
       } 
       else if (action === 'RECEIPT') {
-        // Poprawiony check odbiorcy - musi zgadzać się target_branch_id z moją lokalizacją
         const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
         if (Number(selectedTool.target_branch_id) !== myLoc) {
           throw new Error("Tylko oddział docelowy może potwierdzić odbiór!");
@@ -235,7 +243,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       } 
       else if (action === 'ORDER') {
         let orderNote = notes || 'Potrzeba oddziału';
-        
         if (resStartDate && resEndDate) {
           await supabase.from('tool_reservations').insert({
              tool_id: selectedTool.id,
@@ -247,7 +254,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           });
           orderNote = `[REZERWACJA ${resStartDate} - ${resEndDate}] ${orderNote}`;
         }
-
         await createLog({ 
           tool_id: selectedTool.id, 
           action: 'ZAMÓWIENIE', 
@@ -256,10 +262,8 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           notes: orderNote, 
           operator_id: user.id 
         });
-        
         alert(`Zapytanie ${resStartDate ? 'z rezerwacją ' : ''}zostało wysłane!`);
       }
-
       onRefresh();
       setSelectedToolId(null);
       setNotes('');
@@ -304,6 +308,56 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       setNewDescription('');
       setNewPhoto(null);
       setNewPhotoPreview(null);
+      onRefresh();
+    } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+  };
+
+  const handleOpenEdit = (tool: Tool) => {
+    setEditingTool(tool);
+    setEditName(tool.name);
+    setEditSerialNumber(tool.serial_number);
+    setEditBranchId(String(tool.branch_id));
+    setEditDescription(tool.description || '');
+    setEditPhoto(null);
+    setEditPhotoPreview(getToolImageUrl(tool.photo_path));
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateTool = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTool || !editName || !editSerialNumber) return;
+    setIsSubmitting(true);
+    try {
+      let photo_path = editingTool.photo_path;
+      if (editPhoto) {
+        const fileName = `tool_${Date.now()}_${editSerialNumber}.jpg`;
+        const { error: uploadError } = await supabase.storage.from('tool-photos').upload(fileName, editPhoto);
+        if (uploadError) throw uploadError;
+        photo_path = fileName;
+      }
+
+      const { error } = await supabase
+        .from('tools')
+        .update({
+          name: editName,
+          serial_number: editSerialNumber,
+          branch_id: Number(editBranchId),
+          description: editDescription,
+          photo_path
+        })
+        .eq('id', editingTool.id);
+
+      if (error) throw error;
+
+      await createLog({
+        tool_id: editingTool.id,
+        action: 'PRZYJĘCIE',
+        notes: `Aktualizacja danych technicznych i wizualnych zasobu. Operator: ${user.email}`,
+        operator_id: user.id
+      });
+
+      alert("Dane narzędzia zaktualizowane.");
+      setIsEditModalOpen(false);
       onRefresh();
     } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
@@ -398,6 +452,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                   getToolImageUrl={getToolImageUrl} 
                   onZoom={setLightboxImage} 
                   onDelete={(id: string) => setConfirmDeleteId(id)}
+                  onEdit={() => handleOpenEdit(tool)}
                   confirmDeleteId={confirmDeleteId}
                   handleDeleteTool={handleDeleteTool}
                   simulationBranchId={simulationBranchId}
@@ -409,7 +464,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
         <div className="lg:hidden p-4 space-y-4">
            {tools.map(tool => (
-             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} />
+             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} onEdit={() => handleOpenEdit(tool)} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} />
            ))}
         </div>
       </div>
@@ -575,8 +630,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                          </select>
                       </div>
                    </div>
-                   <label className="w-full h-40 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden">
+                   <label className="relative w-full h-40 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden group hover:border-[#22c55e] transition-colors">
                       {newPhotoPreview ? <img src={newPhotoPreview} className="w-full h-full object-cover" /> : <Camera size={32} className="text-slate-300" />}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all">
+                        <UploadCloud size={32} className="text-white mb-2" />
+                        <span className="text-white text-[8px] font-black uppercase tracking-widest">Wgraj Zdjęcie</span>
+                      </div>
                       <input type="file" className="hidden" accept="image/*" onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) { setNewPhoto(file); setNewPhotoPreview(URL.createObjectURL(file)); }
@@ -592,12 +651,73 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         </div>
       )}
 
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-[#0f172a]/95 backdrop-blur-3xl" onClick={() => setIsEditModalOpen(false)}></div>
+          <div className="relative w-full max-w-4xl bg-white rounded-t-[2rem] sm:rounded-[4rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500 flex flex-col max-h-[95vh]">
+             <div className="bg-[#0f172a] p-8 sm:p-12 text-white flex justify-between items-center border-b-8 border-amber-500 shrink-0">
+                <div className="flex items-center space-x-6">
+                  <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center shadow-xl rotate-3"><Edit2 size={28}/></div>
+                  <div>
+                    <h3 className="text-xl sm:text-3xl font-black uppercase italic leading-none">Edytuj Zasób</h3>
+                  </div>
+                </div>
+                <button onClick={() => setIsEditModalOpen(false)} className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-all"><X size={24}/></button>
+             </div>
+             <form onSubmit={handleUpdateTool} className="p-8 sm:p-12 space-y-8 overflow-y-auto no-scrollbar relative">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                   <div className="space-y-6">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Nazwa Zasobu</label>
+                        <input required type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nazwa Narzędzia" className="w-full px-8 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-amber-500 shadow-inner" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Numer Seryjny</label>
+                            <input required type="text" value={editSerialNumber} onChange={e => setEditSerialNumber(e.target.value)} placeholder="S/N" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl font-black uppercase outline-none focus:border-amber-500 shadow-inner" />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Lokalizacja</label>
+                            <select value={editBranchId} onChange={e => setEditBranchId(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-xl font-black uppercase outline-none focus:border-amber-500 shadow-inner cursor-pointer">
+                              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+                            </select>
+                         </div>
+                      </div>
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 italic leading-none">Dokumentacja Wizualna</label>
+                      <label className="relative w-full h-40 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden group hover:border-amber-500 transition-colors shadow-inner">
+                          {editPhotoPreview ? <img src={editPhotoPreview} className="w-full h-full object-cover" /> : <Camera size={32} className="text-slate-300" />}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all">
+                            <UploadCloud size={32} className="text-white mb-2" />
+                            <span className="text-white text-[8px] font-black uppercase tracking-widest">Zmień Zdjęcie</span>
+                          </div>
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) { setEditPhoto(file); setEditPhotoPreview(URL.createObjectURL(file)); }
+                          }} />
+                      </label>
+                   </div>
+                </div>
+                <div className="space-y-4">
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-6 italic leading-none">Specyfikacja Techniczna / Komentarz</label>
+                   <textarea rows={4} value={editDescription} onChange={e => setEditDescription(e.target.value)} placeholder="Opisz narzędzie lub dodaj ważne uwagi..." className="w-full p-8 bg-slate-50 border border-slate-200 rounded-[2rem] font-black uppercase outline-none focus:border-amber-500 shadow-inner min-h-[150px] resize-none"></textarea>
+                </div>
+                <button type="submit" disabled={isSubmitting} className="w-full py-8 bg-amber-500 text-white rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-amber-800 active:scale-95 flex items-center justify-center space-x-4 transition-all">
+                  {isSubmitting ? <Loader className="animate-spin" size={24}/> : <Save size={24}/>}
+                  <span>ZAPISZ ZMIANY</span>
+                </button>
+             </form>
+          </div>
+        </div>
+      )}
+
       <Lightbox isOpen={!!lightboxImage} imageUrl={lightboxImage || ''} onClose={() => setLightboxImage(null)} />
     </div>
   );
 };
 
-const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, confirmDeleteId, handleDeleteTool, simulationBranchId }: any) => {
+const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, onEdit, confirmDeleteId, handleDeleteTool, simulationBranchId }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
   const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
@@ -635,12 +755,22 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
       <td className="px-12 py-8 text-right">
          <div className="flex items-center justify-end space-x-3">
             {isAdmin && (
-              <button 
-                onClick={(e) => { e.stopPropagation(); isConfirming ? handleDeleteTool(tool.id) : onDelete(tool.id); }}
-                className={`p-4 rounded-xl transition-all ${isConfirming ? 'bg-rose-600 text-white px-8' : 'bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white'}`}
-              >
-                {isConfirming ? "TAK" : <Trash2 size={16}/>}
-              </button>
+              <>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                  className="p-4 bg-amber-50 text-amber-500 rounded-xl hover:bg-amber-500 hover:text-white transition-all shadow-xl"
+                  title="Edytuj zasób"
+                >
+                  <Edit2 size={16}/>
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); isConfirming ? handleDeleteTool(tool.id) : onDelete(tool.id); }}
+                  className={`p-4 rounded-xl transition-all ${isConfirming ? 'bg-rose-600 text-white px-8' : 'bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white'}`}
+                  title="Usuń zasób"
+                >
+                  {isConfirming ? "TAK" : <Trash2 size={16}/>}
+                </button>
+              </>
             )}
             
             {isHeadingToThisBranch ? (
@@ -666,24 +796,32 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
   );
 };
 
-const ToolCard = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, simulationBranchId }: any) => {
+const ToolCard = ({ tool, effectiveBranchId, user, onSelect, onEdit, getToolImageUrl, simulationBranchId }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
   const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
   const isHeadingElsewhere = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) !== myLoc;
+  const isAdmin = user.role === 'ADMINISTRATOR';
   
   return (
     <div className={`bg-white p-6 rounded-[2rem] border-2 shadow-xl flex flex-col space-y-6 ${isPhysicallyHere ? 'border-[#22c55e]/40' : 'border-slate-100'}`}>
-      <div className="flex items-center space-x-5">
-        <div className="w-20 h-20 bg-slate-50 rounded-2xl overflow-hidden shrink-0 border-2 border-white shadow-lg">
-           <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover" alt="" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-5">
+          <div className="w-20 h-20 bg-slate-50 rounded-2xl overflow-hidden shrink-0 border-2 border-white shadow-lg">
+             <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover" alt="" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h4 className="text-lg font-black uppercase italic tracking-tighter text-[#0f172a] truncate leading-none">{tool.name}</h4>
+            <p className={`text-[9px] font-black uppercase mt-3 italic ${(isPhysicallyHere || isHeadingToThisBranch) ? 'text-[#22c55e]' : 'text-slate-400'}`}>
+              {isHeadingToThisBranch ? '● Twoja Przesyłka' : isPhysicallyHere ? '● Twój Oddział' : `○ ${tool.current_branch?.name}`}
+            </p>
+          </div>
         </div>
-        <div className="min-w-0 flex-1">
-          <h4 className="text-lg font-black uppercase italic tracking-tighter text-[#0f172a] truncate leading-none">{tool.name}</h4>
-          <p className={`text-[9px] font-black uppercase mt-3 italic ${(isPhysicallyHere || isHeadingToThisBranch) ? 'text-[#22c55e]' : 'text-slate-400'}`}>
-            {isHeadingToThisBranch ? '● Twoja Przesyłka' : isPhysicallyHere ? '● Twój Oddział' : `○ ${tool.current_branch?.name}`}
-          </p>
-        </div>
+        {isAdmin && (
+           <button onClick={onEdit} className="p-4 bg-amber-50 text-amber-500 rounded-2xl">
+              <Edit2 size={16}/>
+           </button>
+        )}
       </div>
       
       {isHeadingToThisBranch ? (
