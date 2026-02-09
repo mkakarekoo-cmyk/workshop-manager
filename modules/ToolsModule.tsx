@@ -15,7 +15,6 @@ import { supabase } from '../supabase';
 const PAGE_SIZE = 50;
 const SUPABASE_URL = 'https://cuctnnsgvxhomxobpchi.supabase.co';
 
-// Stałe wartości kategorii, aby uniknąć literówek
 const BRANDS = {
   JD: 'JOHN DEERE',
   CLAAS: 'CLAAS',
@@ -48,7 +47,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
 
-  // Globalne statystyki (naprawa błędu licznika)
   const [globalStats, setGlobalStats] = useState({ inTransit: 0, occupied: 0, maintenance: 0, free: 0 });
   
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
@@ -63,7 +61,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [resStartDate, setResStartDate] = useState('');
   const [resEndDate, setResEndDate] = useState('');
 
-  // Add Tool Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newSerialNumber, setNewSerialNumber] = useState('');
@@ -73,7 +70,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [newPhotoPreview, setNewPhotoPreview] = useState<string | null>(null);
 
-  // Edit Tool Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [editName, setEditName] = useState('');
@@ -105,7 +101,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     return selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === effectiveBranchId;
   }, [selectedTool, effectiveBranchId]);
 
-  // Funkcja pobierająca faktyczne ilości z całej bazy danych (nie tylko paginacja)
   const fetchGlobalStats = useCallback(async () => {
     try {
       const { count: transit } = await supabase.from('tools').select('*', { count: 'exact', head: true }).eq('status', ToolStatus.IN_TRANSIT);
@@ -192,7 +187,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         if (isLoadMore) setOffset(currentOffset);
       }
       
-      // Przy każdym odświeżeniu pobierz też globalne statystyki
       fetchGlobalStats();
     } catch (e) { console.error(e); } finally { setLoading(false); setLoadingMore(false); }
   }, [viewMode, simulationBranchId, searchTerm, selectedBrand, effectiveBranchId, offset, fetchGlobalStats]);
@@ -353,7 +347,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       setNewDescription('');
       setNewPhoto(null);
       setNewPhotoPreview(null);
-      setSelectedBrand('ALL'); // Przełącz na widok wszystkich, by zobaczyć nowy element
+      setSelectedBrand('ALL');
       onRefresh();
     } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
   };
@@ -433,7 +427,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         </div>
       )}
 
-      {/* Naprawione statystyki - teraz używają globalStats zamiast tools.filter().length */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
         <StatCard label="W TRANSPORCIE" color="blue" icon={<Truck size={20}/>} value={globalStats.inTransit} />
         <StatCard label="WYDANE" color="rose" icon={<Package size={20}/>} value={globalStats.occupied} />
@@ -441,7 +434,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         <StatCard label="DOSTĘPNE" color="green" icon={<CheckCircle size={20}/>} value={globalStats.free} />
       </div>
 
-      {/* Brand Switcher Bar */}
       <div className="flex bg-slate-100 p-2 rounded-[2rem] sm:rounded-[3rem] shadow-inner overflow-x-auto no-scrollbar gap-2">
          <BrandTab active={selectedBrand === 'ALL'} onClick={() => setSelectedBrand('ALL')} icon={<Filter size={16}/>} label="WSZYSTKIE" color="bg-slate-800" />
          <BrandTab active={selectedBrand === BRANDS.JD} onClick={() => setSelectedBrand(BRANDS.JD)} icon={<div className="w-3 h-3 bg-yellow-400 rounded-full"/>} label="JOHN DEERE" color="bg-green-700" />
@@ -557,7 +549,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                    <ManageTab active={manageTab === 'ZAMÓWIENIE'} onClick={() => setManageTab('ZAMÓWIENIE')} icon={<ShoppingBag size={16} />} label="Zapotrzebowanie" />
                  )}
                  <ManageTab active={manageTab === 'TIMELINE'} onClick={() => setManageTab('TIMELINE')} icon={<History size={16} />} label="Historia" />
-                 <ManageTab active={manageTab === 'INFO'} onClick={() => setManageTab('INFO'} icon={<Info size={16} />} label="Specyfikacja" />
+                 <ManageTab active={manageTab === 'INFO'} onClick={() => setManageTab('INFO')} icon={<Info size={16} />} label="Specyfikacja" />
                </div>
 
                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">

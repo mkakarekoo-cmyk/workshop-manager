@@ -52,12 +52,11 @@ const DashboardModule: React.FC<DashboardModuleProps> = ({ branches, refreshTrig
         .from('tool_logs')
         .select('*, tool:tools(name), from_branch:branches!tool_logs_from_branch_id_fkey(name), to_branch:branches!tool_logs_to_branch_id_fkey(name)')
         .order('created_at', { ascending: false })
-        .limit(150); // Zwiększony limit dla lepszej diagnostyki
+        .limit(150); 
 
       if (error) throw error;
       setLogs(data || []);
       
-      // Pobierz realne liczniki z bazy
       fetchGlobalStats();
     } catch (e) {
       console.error("Dashboard Fetch Error:", e);
@@ -92,7 +91,6 @@ const DashboardModule: React.FC<DashboardModuleProps> = ({ branches, refreshTrig
 
   return (
     <div className="p-8 lg:p-14 space-y-12 animate-in fade-in duration-700 pb-32">
-      {/* Admin Command Header */}
       <div className="bg-[#0f172a] p-12 rounded-[4rem] shadow-2xl relative overflow-hidden border-b-8 border-[#22c55e]">
          <div className="absolute top-0 right-0 opacity-10 pointer-events-none">
             <LayoutDashboard size={400} className="text-white" />
@@ -114,7 +112,6 @@ const DashboardModule: React.FC<DashboardModuleProps> = ({ branches, refreshTrig
          </div>
       </div>
 
-      {/* Analytics Cards - Teraz interaktywne */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
          <AnalyticsCard 
             title="Transfery" 
@@ -154,9 +151,7 @@ const DashboardModule: React.FC<DashboardModuleProps> = ({ branches, refreshTrig
          />
       </div>
 
-      {/* Main Flow Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
-         {/* Live Traffic */}
          <div className="xl:col-span-2 space-y-8">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                <div className="flex items-center space-x-6">
@@ -234,7 +229,6 @@ const DashboardModule: React.FC<DashboardModuleProps> = ({ branches, refreshTrig
             </div>
          </div>
 
-         {/* Sidebar Stats */}
          <div className="space-y-12">
             <h3 className="text-3xl font-black text-[#0f172a] uppercase tracking-tighter italic border-l-8 border-[#22c55e] pl-8">Ranking Aktywności</h3>
             <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 space-y-8">
