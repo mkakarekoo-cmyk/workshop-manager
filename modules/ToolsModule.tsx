@@ -47,6 +47,9 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [selectedBrand, setSelectedBrand] = useState<BrandCategory>('ALL');
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+
+  // Globalne statystyki (naprawa błędu licznika)
+  const [globalStats, setGlobalStats] = useState({ inTransit: 0, occupied: 0, maintenance: 0, free: 0 });
   
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [manageTab, setManageTab] = useState<'LOGISTYKA' | 'TIMELINE' | 'INFO' | 'ZAMÓWIENIE'>('LOGISTYKA');
@@ -101,6 +104,25 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     if (!selectedTool) return false;
     return selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === effectiveBranchId;
   }, [selectedTool, effectiveBranchId]);
+
+  // Funkcja pobierająca faktyczne ilości z całej bazy danych (nie tylko paginacja)
+  const fetchGlobalStats = useCallback(async () => {
+    try {
+      const { count: transit } = await supabase.from('tools').select('*', { count: 'exact', head: true }).eq('status', ToolStatus.IN_TRANSIT);
+      const { count: occupied } = await supabase.from('tools').select('*', { count: 'exact', head: true }).eq('status', ToolStatus.OCCUPIED);
+      const { count: maint } = await supabase.from('tools').select('*', { count: 'exact', head: true }).eq('status', ToolStatus.MAINTENANCE);
+      const { count: free } = await supabase.from('tools').select('*', { count: 'exact', head: true }).eq('status', ToolStatus.FREE);
+      
+      setGlobalStats({
+        inTransit: transit || 0,
+        occupied: occupied || 0,
+        maintenance: maint || 0,
+        free: free || 0
+      });
+    } catch (e) {
+      console.error("Stats fetch error:", e);
+    }
+  }, []);
 
   useEffect(() => {
     if (targetToolId) {
@@ -169,8 +191,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         setTools(prev => isLoadMore ? [...prev, ...data] : data);
         if (isLoadMore) setOffset(currentOffset);
       }
+      
+      // Przy każdym odświeżeniu pobierz też globalne statystyki
+      fetchGlobalStats();
     } catch (e) { console.error(e); } finally { setLoading(false); setLoadingMore(false); }
-  }, [viewMode, simulationBranchId, searchTerm, selectedBrand, effectiveBranchId, offset]);
+  }, [viewMode, simulationBranchId, searchTerm, selectedBrand, effectiveBranchId, offset, fetchGlobalStats]);
 
   useEffect(() => {
     fetchTools();
@@ -408,11 +433,12 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         </div>
       )}
 
+      {/* Naprawione statystyki - teraz używają globalStats zamiast tools.filter().length */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
-        <StatCard label="W TRANSPORCIE" color="blue" icon={<Truck size={20}/>} value={tools.filter(t => t.status === ToolStatus.IN_TRANSIT).length} />
-        <StatCard label="WYDANE" color="rose" icon={<Package size={20}/>} value={tools.filter(t => t.status === ToolStatus.OCCUPIED).length} />
-        <StatCard label="W SERWISIE" color="amber" icon={<AlertTriangle size={20}/>} value={tools.filter(t => t.status === ToolStatus.MAINTENANCE).length} />
-        <StatCard label="DOSTĘPNE" color="green" icon={<CheckCircle size={20}/>} value={tools.filter(t => t.status === ToolStatus.FREE).length} />
+        <StatCard label="W TRANSPORCIE" color="blue" icon={<Truck size={20}/>} value={globalStats.inTransit} />
+        <StatCard label="WYDANE" color="rose" icon={<Package size={20}/>} value={globalStats.occupied} />
+        <StatCard label="W SERWISIE" color="amber" icon={<AlertTriangle size={20}/>} value={globalStats.maintenance} />
+        <StatCard label="DOSTĘPNE" color="green" icon={<CheckCircle size={20}/>} value={globalStats.free} />
       </div>
 
       {/* Brand Switcher Bar */}
@@ -531,7 +557,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                    <ManageTab active={manageTab === 'ZAMÓWIENIE'} onClick={() => setManageTab('ZAMÓWIENIE')} icon={<ShoppingBag size={16} />} label="Zapotrzebowanie" />
                  )}
                  <ManageTab active={manageTab === 'TIMELINE'} onClick={() => setManageTab('TIMELINE')} icon={<History size={16} />} label="Historia" />
-                 <ManageTab active={manageTab === 'INFO'} onClick={() => setManageTab('INFO')} icon={<Info size={16} />} label="Specyfikacja" />
+                 <ManageTab active={manageTab === 'INFO'} onClick={() => setManageTab('INFO'} icon={<Info size={16} />} label="Specyfikacja" />
                </div>
 
                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
