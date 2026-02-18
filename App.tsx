@@ -27,6 +27,41 @@ const SPECIAL_USER_KARNIEWO = 'serwis.karniewo@contractus.com.pl';
 const SPECIAL_USER_ANDRZEJ = 'andrzej.chlabicz@contractus.com.pl';
 const SPECIAL_USER_MATEUSZ_HUB = 'mateusz.kakareko@contractus.com.pl';
 
+// LISTA KONT MECHANIKÓW DO AUTOMATYCZNEGO PRZYPISANIA STATUSU
+const MECHANIC_EMAILS = [
+  'marek.hapon@contractus.com.pl',
+  'adam.dera@contractus.com.pl',
+  'andrzej.romaniuk@contractus.com.pl',
+  'pawel.orlowski@contractus.com.pl',
+  'mariusz.gromko@contractus.com.pl',
+  'mateusz.kakareko@contractus.com.pl',
+  'marek.kietlinski@contractus.com.pl',
+  'piotr.misko@contractus.com.pl',
+  'tomasz.radziwon@contractus.com.pl',
+  'jaroslaw.wnorowski@contractus.com.pl',
+  'krzysztof.kakareko@contractus.com.pl',
+  'maksymilian.czeczko@contractus.com.pl',
+  'tomasz.raciborski@contractus.com.pl',
+  'konrad.ostrowski@contractus.com.pl',
+  'bartlomiej.zajkowski@contractus.com.pl',
+  'patryk.sak@contractus.com.pl',
+  'kamil.staskiewicz@contractus.com.pl',
+  'lukasz.brodowski@contractus.com.pl',
+  'przemyslaw.kuligowski@contractus.com.pl',
+  'mateusz.zdzichowski@contractus.com.pl',
+  'krzysztof.mazur@contractus.com.pl',
+  'zbigniew.wolinski@contractus.com.pl',
+  'damian.skarzynski@contractus.com.pl',
+  'grzegorz.borkowski@contractus.com.pl',
+  'marcin.pierzynowski@contractus.com.pl',
+  'patryk.pikus@contractus.com.pl',
+  'krzysztof.lewicki@contractus.com.pl',
+  'przemyslaw.rozicki@contractus.com.pl',
+  'robert.dzierzgowski@contractus.com.pl',
+  'michal.modzelewski@contractus.com.pl',
+  'adam.baginski@contractus.com.pl'
+].map(email => email.toLowerCase());
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleType>('BAZA NARZĘDZI');
@@ -71,6 +106,7 @@ const App: React.FC = () => {
       let finalRole = profile?.role || 'MECHANIK';
       let finalBranch = profile?.branch_id ? String(profile.branch_id) : '1';
 
+      // HIERARCHIA UPRAWNIEŃ I PRZYPISAŃ
       if (userEmail === MASTER_ADMIN_EMAIL.toLowerCase()) {
         finalRole = 'ADMINISTRATOR';
       } else if (userEmail === SPECIAL_USER_ADAM.toLowerCase()) {
@@ -79,9 +115,12 @@ const App: React.FC = () => {
       } else if (userEmail === SPECIAL_USER_KARNIEWO.toLowerCase()) {
         finalRole = 'DORADCA SERWISOWY';
         finalBranch = '2'; 
-      } else if (userEmail === SPECIAL_USER_ANDRZEJ.toLowerCase() || userEmail === SPECIAL_USER_MATEUSZ_HUB.toLowerCase()) {
+      } else if (userEmail === SPECIAL_USER_ANDRZEJ.toLowerCase()) {
         finalRole = 'DORADCA SERWISOWY';
         finalBranch = '1'; 
+      } else if (MECHANIC_EMAILS.includes(userEmail)) {
+        // Jeśli email znajduje się na liście mechaników, nadpisujemy rolę
+        finalRole = 'MECHANIK';
       }
 
       const finalUser: User = {
@@ -193,7 +232,6 @@ const App: React.FC = () => {
             };
           }).filter(n => n !== null);
 
-        // Znalezienie zapotrzebowania skierowanego do nas, które nie było jeszcze pokazywane
         const unhandledOrder = mapped.find(n => 
           n.raw_log?.action === 'ZAMÓWIENIE' && 
           Number(n.raw_log?.from_branch_id) === branchNum &&
@@ -202,15 +240,12 @@ const App: React.FC = () => {
         );
 
         if (unhandledOrder) {
-          // Natychmiast dodajemy do przetworzonych, aby zapobiec duplikacji modala przy kolejnym fetchu
           setProcessedOrderIds(prev => [...new Set([...prev, unhandledOrder.id])]);
           setPendingOrder(unhandledOrder);
           try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); } catch(e){}
         } else if (mapped.length > 0) {
           const newest = mapped[0];
           const logAgeMs = Date.now() - new Date(newest.created_at).getTime();
-          
-          // Nie pokazuj toasta jeśli to zapotrzebowanie skierowane do nas (bo jest modal)
           const isMyIncomingOrder = newest.raw_log?.action === 'ZAMÓWIENIE' && Number(newest.raw_log?.from_branch_id) === branchNum;
           
           if (newest.id !== lastProcessedIdRef.current && showToast && logAgeMs < 120000 && !isMyIncomingOrder) {
@@ -228,7 +263,6 @@ const App: React.FC = () => {
   }, [user, simulationBranchId, lastReadAt, processedOrderIds]);
 
   const handleConfirmOrder = (order: AppNotification) => {
-    // ID jest już w processedOrderIds dzięki logice w fetchNotifications
     if (order.tool_id) {
       setActiveModule('BAZA NARZĘDZI');
       setTargetToolId(order.tool_id);
