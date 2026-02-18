@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { LogOut, Bell, RefreshCw, X, Menu, Info, ShoppingBag, Truck, PackageCheck } from 'lucide-react';
+import { LogOut, Bell, RefreshCw, X, Menu, Info, ShoppingBag, Truck, PackageCheck, Key } from 'lucide-react';
 import { User, ModuleType, AppNotification } from '../types';
 
 interface HeaderProps {
@@ -12,9 +12,13 @@ interface HeaderProps {
   notifications: AppNotification[];
   onMarkRead: () => void;
   onNotificationClick: (n: AppNotification) => void;
+  onChangePasswordClick: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, onRefresh, notifications, onMarkRead, onNotificationClick }) => {
+const Header: React.FC<HeaderProps> = ({ 
+  onLogout, activeModule, toggleSidebar, onRefresh, 
+  notifications, onMarkRead, onNotificationClick, onChangePasswordClick 
+}) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   
@@ -127,6 +131,14 @@ const Header: React.FC<HeaderProps> = ({ onLogout, activeModule, toggleSidebar, 
             </div>
           )}
         </div>
+
+        <button 
+          onClick={onChangePasswordClick}
+          className="p-3 sm:p-5 text-slate-400 hover:text-amber-500 bg-white border-2 border-slate-50 shadow-lg rounded-xl sm:rounded-[1.8rem] transition-all active:scale-95"
+          title="Zmień hasło"
+        >
+          <Key size={18} className="sm:size-[22px]" />
+        </button>
 
         <button 
           onClick={onLogout}

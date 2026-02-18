@@ -83,6 +83,8 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   const [showRlsFix, setShowRlsFix] = useState(false);
 
   const isAdmin = user.role === 'ADMINISTRATOR';
+  const isServiceAdvisor = user.role === 'DORADCA SERWISOWY';
+  const canManageLogistics = isAdmin || isServiceAdvisor;
 
   const selectedTool = useMemo(() => tools.find(t => t.id === selectedToolId), [tools, selectedToolId]);
 
@@ -138,13 +140,13 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
   useEffect(() => {
     if (selectedToolId) {
-      if (isOwner || isRecipient) {
+      if ((isOwner || isRecipient) && canManageLogistics) {
         setManageTab('LOGISTYKA');
       } else {
-        setManageTab('ZAMÓWIENIE');
+        setManageTab('INFO');
       }
     }
-  }, [selectedToolId, isOwner, isRecipient]);
+  }, [selectedToolId, isOwner, isRecipient, canManageLogistics]);
 
   const getToolImageUrl = (path: string | null | undefined) => {
     if (!path) return `${SUPABASE_URL}/storage/v1/object/public/tool-photos/placeholder.jpg`;
@@ -232,6 +234,8 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
   const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE') => {
     if (!selectedTool || isSubmitting) return;
+    if (!canManageLogistics && action !== 'ORDER') return; // Tylko ORDER dopuszczalny (teoretycznie)
+
     setIsSubmitting(true);
     try {
       const targetId = effectiveBranchId;
@@ -496,6 +500,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                   tool={tool} 
                   effectiveBranchId={effectiveBranchId} 
                   user={user} 
+                  canManageLogistics={canManageLogistics}
                   onSelect={setSelectedToolId} 
                   getToolImageUrl={getToolImageUrl} 
                   onZoom={setLightboxImage} 
@@ -513,7 +518,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
         <div className="lg:hidden p-4 space-y-4">
            {tools.map(tool => (
-             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} onSelect={setSelectedToolId} onEdit={() => handleOpenEdit(tool)} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} BRANDS={BRANDS} />
+             <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} canManageLogistics={canManageLogistics} onSelect={setSelectedToolId} onEdit={() => handleOpenEdit(tool)} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} BRANDS={BRANDS} />
            ))}
         </div>
       </div>
@@ -544,9 +549,10 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
             
             <div className="flex-1 overflow-y-auto no-scrollbar p-6 sm:p-12 space-y-8 sm:space-y-12">
                <div className="flex bg-slate-50 p-1.5 rounded-[1.5rem] sm:rounded-[3rem] border border-slate-100 shadow-inner overflow-x-auto no-scrollbar gap-1 shrink-0">
-                 {(isOwner || isRecipient) ? (
+                 {canManageLogistics && (isOwner || isRecipient) && (
                    <ManageTab active={manageTab === 'LOGISTYKA'} onClick={() => setManageTab('LOGISTYKA')} icon={<ArrowRightLeft size={16} />} label="Wysyłka / Serwis / Odbiór" />
-                 ) : (
+                 )}
+                 {canManageLogistics && (!isOwner && !isRecipient) && (
                    <ManageTab active={manageTab === 'ZAMÓWIENIE'} onClick={() => setManageTab('ZAMÓWIENIE')} icon={<ShoppingBag size={16} />} label="Zapotrzebowanie" />
                  )}
                  <ManageTab active={manageTab === 'TIMELINE'} onClick={() => setManageTab('TIMELINE')} icon={<History size={16} />} label="Historia" />
@@ -554,7 +560,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                </div>
 
                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {manageTab === 'LOGISTYKA' && (isOwner || isRecipient) && (
+                  {manageTab === 'LOGISTYKA' && canManageLogistics && (isOwner || isRecipient) && (
                     <div className="space-y-8">
                        {selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === (simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId)) ? (
                          <div className="p-10 bg-blue-50 rounded-[3rem] text-center space-y-6">
@@ -589,7 +595,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                     </div>
                   )}
 
-                  {manageTab === 'ZAMÓWIENIE' && (!isOwner && !isRecipient) && (
+                  {manageTab === 'ZAMÓWIENIE' && canManageLogistics && (!isOwner && !isRecipient) && (
                     <div className="p-8 sm:p-12 bg-amber-50 rounded-[3rem] border-2 border-amber-100 space-y-8 animate-in zoom-in duration-300">
                        <div className="flex items-center space-x-6">
                           <div className="p-6 bg-amber-500 text-white rounded-3xl shadow-xl"><ShoppingBag size={32}/></div>
@@ -650,10 +656,26 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
                   {manageTab === 'INFO' && (
                     <div className="p-8 sm:p-12 bg-slate-50 rounded-[1.5rem] sm:rounded-[4rem] border-2 border-slate-100 shadow-inner">
+                        {!canManageLogistics && (isOwner || isRecipient) && (
+                          <div className="mb-8 p-6 bg-[#22c55e]/10 rounded-2xl border border-[#22c55e]/20 flex items-center space-x-4">
+                            <Info size={20} className="text-[#22c55e]" />
+                            <p className="text-[10px] font-black text-[#22c55e] uppercase italic">Widzisz ten zasób ponieważ jest przypisany do Twojej bazy.</p>
+                          </div>
+                        )}
                         <div className="prose prose-slate max-w-none">
                           <p className="text-slate-600 font-bold uppercase text-xs sm:text-sm leading-relaxed italic">
                             {selectedTool.description || "Brak szczegółowej specyfikacji."}
                           </p>
+                        </div>
+                        <div className="mt-8 pt-8 border-t border-slate-200 grid grid-cols-2 gap-6">
+                           <div>
+                             <p className="text-[9px] font-black text-slate-300 uppercase italic">Ostatnia Lokalizacja</p>
+                             <p className="text-xs font-black text-slate-700 uppercase italic mt-1">{selectedTool.current_branch?.name}</p>
+                           </div>
+                           <div>
+                             <p className="text-[9px] font-black text-slate-300 uppercase italic">Numer Seryjny</p>
+                             <p className="text-xs font-black text-slate-700 uppercase italic mt-1">{selectedTool.serial_number}</p>
+                           </div>
                         </div>
                     </div>
                   )}
@@ -796,7 +818,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   );
 };
 
-const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZoom, onDelete, onEdit, confirmDeleteId, handleDeleteTool, simulationBranchId, BRANDS }: any) => {
+const ToolRow = ({ tool, effectiveBranchId, user, canManageLogistics, onSelect, getToolImageUrl, onZoom, onDelete, onEdit, confirmDeleteId, handleDeleteTool, simulationBranchId, BRANDS }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
   const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
@@ -862,20 +884,29 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
             )}
             
             {isHeadingToThisBranch ? (
-              <button onClick={() => onSelect(tool.id)} className="px-10 py-5 bg-blue-600 text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-blue-900 shadow-xl animate-bounce active:scale-95">
-                 ODBIERZ
+              <button 
+                onClick={() => onSelect(tool.id)} 
+                className={`px-10 py-5 ${canManageLogistics ? 'bg-blue-600 animate-bounce active:scale-95' : 'bg-slate-100 text-slate-400'} text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 ${canManageLogistics ? 'border-blue-900 shadow-xl' : 'border-slate-200'}`}
+              >
+                 {canManageLogistics ? 'ODBIERZ' : 'SZCZEGÓŁY'}
               </button>
             ) : isHeadingElsewhere ? (
-              <button disabled className="px-10 py-5 bg-slate-100 text-slate-400 rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-slate-200 cursor-not-allowed">
+              <button onClick={() => onSelect(tool.id)} className="px-10 py-5 bg-slate-100 text-slate-400 rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-slate-200">
                  W DRODZE
               </button>
             ) : isPhysicallyHere ? (
-              <button onClick={() => onSelect(tool.id)} className="px-10 py-5 bg-[#0f172a] text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-black hover:bg-[#22c55e] shadow-xl active:scale-95">
-                 ZARZĄDZAJ
+              <button 
+                onClick={() => onSelect(tool.id)} 
+                className={`px-10 py-5 ${canManageLogistics ? 'bg-[#0f172a] hover:bg-[#22c55e] active:scale-95 border-black shadow-xl' : 'bg-slate-100 text-slate-600 border-slate-200'} text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4`}
+              >
+                 {canManageLogistics ? 'ZARZĄDZAJ' : 'SZCZEGÓŁY'}
               </button>
             ) : (
-              <button onClick={() => onSelect(tool.id)} className="px-10 py-5 bg-amber-500 text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-amber-800 hover:bg-amber-600 shadow-xl active:scale-95">
-                 ZAMÓW
+              <button 
+                onClick={() => onSelect(tool.id)} 
+                className={`px-10 py-5 ${canManageLogistics ? 'bg-amber-500 hover:bg-amber-600 active:scale-95 border-amber-800 shadow-xl' : 'bg-slate-100 text-slate-400 border-slate-200'} text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4`}
+              >
+                 {canManageLogistics ? 'ZAMÓW' : 'PODGLĄD'}
               </button>
             )}
          </div>
@@ -884,7 +915,7 @@ const ToolRow = ({ tool, effectiveBranchId, user, onSelect, getToolImageUrl, onZ
   );
 };
 
-const ToolCard = ({ tool, effectiveBranchId, user, onSelect, onEdit, getToolImageUrl, simulationBranchId, BRANDS }: any) => {
+const ToolCard = ({ tool, effectiveBranchId, user, canManageLogistics, onSelect, onEdit, getToolImageUrl, simulationBranchId, BRANDS }: any) => {
   const isPhysicallyHere = Number(tool.branch_id) === Number(effectiveBranchId);
   const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
   const isHeadingToThisBranch = tool.status === ToolStatus.IN_TRANSIT && Number(tool.target_branch_id) === myLoc;
@@ -899,7 +930,6 @@ const ToolCard = ({ tool, effectiveBranchId, user, onSelect, onEdit, getToolImag
 
   return (
     <div className={`bg-white p-5 sm:p-6 rounded-[2rem] border-2 shadow-xl flex flex-col space-y-5 relative overflow-hidden ${isPhysicallyHere ? 'border-[#22c55e]/40' : 'border-slate-100'}`}>
-      {/* Pływający przycisk edycji - rozwiązuje problem uciekających ołówków */}
       {isAdmin && (
          <button 
            onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -927,20 +957,20 @@ const ToolCard = ({ tool, effectiveBranchId, user, onSelect, onEdit, getToolImag
       
       <div className="pt-2">
         {isHeadingToThisBranch ? (
-          <button onClick={() => onSelect(tool.id)} className="w-full py-4 bg-blue-600 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-blue-900 animate-pulse">
-            ODBIERZ ZASÓB
+          <button onClick={() => onSelect(tool.id)} className={`w-full py-4 ${canManageLogistics ? 'bg-blue-600 animate-pulse border-blue-900' : 'bg-slate-100 text-slate-400 border-slate-200'} text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4`}>
+            {canManageLogistics ? 'ODBIERZ ZASÓB' : 'SZCZEGÓŁY PRZESYŁKI'}
           </button>
         ) : isHeadingElsewhere ? (
-          <button disabled className="w-full py-4 bg-slate-100 text-slate-400 rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-slate-200">
+          <button onClick={() => onSelect(tool.id)} className="w-full py-4 bg-slate-100 text-slate-400 rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-slate-200">
             W DRODZE
           </button>
         ) : isPhysicallyHere ? (
-          <button onClick={() => onSelect(tool.id)} className="w-full py-4 bg-[#0f172a] text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-black">
-            ZARZĄDZAJ
+          <button onClick={() => onSelect(tool.id)} className={`w-full py-4 ${canManageLogistics ? 'bg-[#0f172a] border-black' : 'bg-slate-100 text-slate-600 border-slate-200'} text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4`}>
+            {canManageLogistics ? 'ZARZĄDZAJ' : 'SZCZEGÓŁY ZASOBU'}
           </button>
         ) : (
-          <button onClick={() => onSelect(tool.id)} className="w-full py-4 bg-amber-500 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-amber-800">
-            ZAMÓW DO SIEBIE
+          <button onClick={() => onSelect(tool.id)} className={`w-full py-4 ${canManageLogistics ? 'bg-amber-500 border-amber-800' : 'bg-slate-100 text-slate-400 border-slate-200'} text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4`}>
+            {canManageLogistics ? 'ZAMÓW DO SIEBIE' : 'PODGLĄD'}
           </button>
         )}
       </div>
