@@ -231,7 +231,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   };
 
   const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE') => {
-    if (!selectedTool) return;
+    if (!selectedTool || isSubmitting) return;
     setIsSubmitting(true);
     try {
       const targetId = effectiveBranchId;
@@ -279,6 +279,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       } 
       else if (action === 'ORDER') {
         let orderNote = notes || 'Potrzeba oddziału';
+        // Wykonujemy rezerwację jeśli podano daty, ale logujemy tylko JEDEN RAZ jako ZAMÓWIENIE
         if (resStartDate && resEndDate) {
           await supabase.from('tool_reservations').insert({
              tool_id: selectedTool.id,
@@ -290,6 +291,8 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           });
           orderNote = `[REZERWACJA ${resStartDate} - ${resEndDate}] ${orderNote}`;
         }
+        
+        // JEDEN log dotyczący zapotrzebowania
         await createLog({ 
           tool_id: selectedTool.id, 
           action: 'ZAMÓWIENIE', 
@@ -623,8 +626,13 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                          </div>
                        </div>
 
-                       <button onClick={() => handleLogisticsAction('ORDER')} className="w-full py-10 bg-amber-500 text-white rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-amber-800 active:scale-95 transition-all flex items-center justify-center space-x-4">
-                          <MessageSquarePlus size={28}/> <span>WYŚLIJ ZAPOTRZEBOWANIE {resStartDate ? '& REZERWUJ' : ''}</span>
+                       <button 
+                        onClick={() => handleLogisticsAction('ORDER')} 
+                        disabled={isSubmitting}
+                        className="w-full py-10 bg-amber-500 text-white rounded-[3rem] font-black uppercase tracking-widest shadow-2xl border-b-8 border-amber-800 active:scale-95 transition-all flex items-center justify-center space-x-4 disabled:opacity-50"
+                       >
+                          {isSubmitting ? <Loader className="animate-spin" size={28}/> : <MessageSquarePlus size={28}/>}
+                          <span>{isSubmitting ? 'WYSYŁANIE...' : `WYŚLIJ ZAPOTRZEBOWANIE ${resStartDate ? '& REZERWUJ' : ''}`}</span>
                        </button>
                     </div>
                   )}

@@ -44,7 +44,6 @@ const App: React.FC = () => {
   const [pendingOrder, setPendingOrder] = useState<AppNotification | null>(null);
   
   const lastProcessedIdRef = useRef<string | null>(null);
-  // Trwała pamięć obsłużonych ID zamówień (aby nie wyskakiwały po odświeżeniu)
   const [processedOrderIds, setProcessedOrderIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('processed_order_ids');
     return saved ? JSON.parse(saved) : [];
@@ -194,7 +193,7 @@ const App: React.FC = () => {
             };
           }).filter(n => n !== null);
 
-        // Szukamy nieprzetworzonych zamówień skierowanych do nas
+        // Znalezienie zapotrzebowania skierowanego do nas, które nie było jeszcze pokazywane
         const unhandledOrder = mapped.find(n => 
           n.raw_log?.action === 'ZAMÓWIENIE' && 
           Number(n.raw_log?.from_branch_id) === branchNum &&
@@ -203,15 +202,18 @@ const App: React.FC = () => {
         );
 
         if (unhandledOrder) {
+          // Natychmiast dodajemy do przetworzonych, aby zapobiec duplikacji modala przy kolejnym fetchu
+          setProcessedOrderIds(prev => [...new Set([...prev, unhandledOrder.id])]);
           setPendingOrder(unhandledOrder);
-          // Nie dodajemy jeszcze do processedOrderIds, zrobimy to po kliknięciu guzika
           try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); } catch(e){}
         } else if (mapped.length > 0) {
           const newest = mapped[0];
           const logAgeMs = Date.now() - new Date(newest.created_at).getTime();
           
-          // Wyświetl Toast tylko jeśli zdarzenie jest świeże (max 2 minuty) i nowe
-          if (newest.id !== lastProcessedIdRef.current && showToast && logAgeMs < 120000) {
+          // Nie pokazuj toasta jeśli to zapotrzebowanie skierowane do nas (bo jest modal)
+          const isMyIncomingOrder = newest.raw_log?.action === 'ZAMÓWIENIE' && Number(newest.raw_log?.from_branch_id) === branchNum;
+          
+          if (newest.id !== lastProcessedIdRef.current && showToast && logAgeMs < 120000 && !isMyIncomingOrder) {
             addToast(newest);
             try { new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3').play().catch(() => {}); } catch(e){}
             lastProcessedIdRef.current = newest.id;
@@ -226,9 +228,7 @@ const App: React.FC = () => {
   }, [user, simulationBranchId, lastReadAt, processedOrderIds]);
 
   const handleConfirmOrder = (order: AppNotification) => {
-    // Zapamiętaj, że to zamówienie zostało obsłużone
-    setProcessedOrderIds(prev => [...new Set([...prev, order.id])]);
-    
+    // ID jest już w processedOrderIds dzięki logice w fetchNotifications
     if (order.tool_id) {
       setActiveModule('BAZA NARZĘDZI');
       setTargetToolId(order.tool_id);
@@ -240,9 +240,6 @@ const App: React.FC = () => {
   const handleRejectOrder = async (order: AppNotification) => {
     if (!user) return;
     try {
-      // Zapamiętaj, że to zamówienie zostało obsłużone
-      setProcessedOrderIds(prev => [...new Set([...prev, order.id])]);
-
       await supabase.from('tool_logs').insert({
         tool_id: order.tool_id,
         action: 'ODMOWA',
