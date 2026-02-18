@@ -279,7 +279,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       } 
       else if (action === 'ORDER') {
         let orderNote = notes || 'Potrzeba oddziału';
-        // Wykonujemy rezerwację jeśli podano daty, ale logujemy tylko JEDEN RAZ jako ZAMÓWIENIE
         if (resStartDate && resEndDate) {
           await supabase.from('tool_reservations').insert({
              tool_id: selectedTool.id,
@@ -292,7 +291,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           orderNote = `[REZERWACJA ${resStartDate} - ${resEndDate}] ${orderNote}`;
         }
         
-        // JEDEN log dotyczący zapotrzebowania
         await createLog({ 
           tool_id: selectedTool.id, 
           action: 'ZAMÓWIENIE', 
@@ -900,44 +898,52 @@ const ToolCard = ({ tool, effectiveBranchId, user, onSelect, onEdit, getToolImag
   };
 
   return (
-    <div className={`bg-white p-6 rounded-[2rem] border-2 shadow-xl flex flex-col space-y-6 ${isPhysicallyHere ? 'border-[#22c55e]/40' : 'border-slate-100'}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-5">
-          <div className="w-20 h-20 bg-slate-50 rounded-2xl overflow-hidden shrink-0 border-2 border-white shadow-lg relative">
-             <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover" alt="" />
-             <div className={`absolute top-1 left-1 px-2 py-0.5 rounded text-[5px] font-black uppercase tracking-widest ${brandStyles[tool.category] || 'bg-slate-100'}`}>{tool.category || 'INNE'}</div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <h4 className="text-lg font-black uppercase italic tracking-tighter text-[#0f172a] truncate leading-none">{tool.name}</h4>
-            <p className={`text-[9px] font-black uppercase mt-3 italic ${(isPhysicallyHere || isHeadingToThisBranch) ? 'text-[#22c55e]' : 'text-slate-400'}`}>
-              {isHeadingToThisBranch ? '● Twoja Przesyłka' : isPhysicallyHere ? '● Twój Oddział' : `○ ${tool.current_branch?.name}`}
-            </p>
-          </div>
+    <div className={`bg-white p-5 sm:p-6 rounded-[2rem] border-2 shadow-xl flex flex-col space-y-5 relative overflow-hidden ${isPhysicallyHere ? 'border-[#22c55e]/40' : 'border-slate-100'}`}>
+      {/* Pływający przycisk edycji - rozwiązuje problem uciekających ołówków */}
+      {isAdmin && (
+         <button 
+           onClick={(e) => { e.stopPropagation(); onEdit(); }}
+           className="absolute top-4 right-4 p-3 bg-amber-50 text-amber-500 rounded-xl shadow-md hover:bg-amber-500 hover:text-white transition-all z-20 border border-amber-100"
+         >
+            <Edit2 size={16}/>
+         </button>
+      )}
+
+      <div className="flex items-start space-x-4 pr-10">
+        <div className="w-20 h-20 bg-slate-50 rounded-2xl overflow-hidden shrink-0 border-2 border-white shadow-lg relative">
+           <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover" alt="" />
+           <div className={`absolute top-0 left-0 px-2 py-0.5 rounded-br-lg text-[6px] font-black uppercase tracking-widest ${brandStyles[tool.category] || 'bg-slate-100'}`}>
+             {tool.category === BRANDS.GENERAL ? 'OGÓLNE' : tool.category === BRANDS.JD ? 'JD' : 'CLAAS'}
+           </div>
         </div>
-        {isAdmin && (
-           <button onClick={onEdit} className="p-4 bg-amber-50 text-amber-500 rounded-2xl">
-              <Edit2 size={16}/>
-           </button>
-        )}
+        <div className="min-w-0 flex-1 py-1">
+          <h4 className="text-base font-black uppercase italic tracking-tighter text-[#0f172a] break-words leading-[1.1] mb-2">{tool.name}</h4>
+          <p className={`text-[8px] font-black uppercase italic flex items-center ${(isPhysicallyHere || isHeadingToThisBranch) ? 'text-[#22c55e]' : 'text-slate-400'}`}>
+            {isHeadingToThisBranch ? '● Twoja Przesyłka' : isPhysicallyHere ? '● Twój Oddział' : `○ ${tool.current_branch?.name}`}
+          </p>
+          <p className="text-[7px] font-mono font-black text-slate-300 uppercase mt-1">S/N: {tool.serial_number}</p>
+        </div>
       </div>
       
-      {isHeadingToThisBranch ? (
-        <button onClick={() => onSelect(tool.id)} className="w-full py-5 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest border-b-4 border-blue-900 animate-pulse">
-          ODBIERZ
-        </button>
-      ) : isHeadingElsewhere ? (
-        <button disabled className="w-full py-5 bg-slate-100 text-slate-400 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest border-b-4 border-slate-200">
-          W DRODZE
-        </button>
-      ) : isPhysicallyHere ? (
-        <button onClick={() => onSelect(tool.id)} className="w-full py-5 bg-[#0f172a] text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest border-b-4 border-black">
-          ZARZĄDZAJ
-        </button>
-      ) : (
-        <button onClick={() => onSelect(tool.id)} className="w-full py-5 bg-amber-500 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest border-b-4 border-amber-800">
-          ZAMÓW
-        </button>
-      )}
+      <div className="pt-2">
+        {isHeadingToThisBranch ? (
+          <button onClick={() => onSelect(tool.id)} className="w-full py-4 bg-blue-600 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-blue-900 animate-pulse">
+            ODBIERZ ZASÓB
+          </button>
+        ) : isHeadingElsewhere ? (
+          <button disabled className="w-full py-4 bg-slate-100 text-slate-400 rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-slate-200">
+            W DRODZE
+          </button>
+        ) : isPhysicallyHere ? (
+          <button onClick={() => onSelect(tool.id)} className="w-full py-4 bg-[#0f172a] text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-black">
+            ZARZĄDZAJ
+          </button>
+        ) : (
+          <button onClick={() => onSelect(tool.id)} className="w-full py-4 bg-amber-500 text-white rounded-[1.2rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-amber-800">
+            ZAMÓW DO SIEBIE
+          </button>
+        )}
+      </div>
     </div>
   );
 };
