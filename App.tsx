@@ -78,7 +78,10 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [targetToolId, setTargetToolId] = useState<string | null>(null);
-  const [pendingOrder, setPendingOrder] = useState<AppNotification | null>(null);
+  
+  // KOLEJKA POWIADOMIEŃ
+  const [pendingOrdersQueue, setPendingOrdersQueue] = useState<AppNotification[]>([]);
+  
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   
   const [processedOrderIds, setProcessedOrderIds] = useState<string[]>(() => {
@@ -91,7 +94,7 @@ const App: React.FC = () => {
   }, [processedOrderIds]);
 
   const addToast = useCallback((title: string, message: string, type: 'INFO' | 'WARNING' | 'SUCCESS') => {
-    const id = Date.now().toString();
+    const id = Date.now().toString() + Math.random();
     setToasts(prev => [...prev, { id, title, message, type }]);
   }, []);
 
@@ -141,11 +144,6 @@ const App: React.FC = () => {
           status: 'AKTYWNY'
         }, { onConflict: 'id' }).select().single();
         if (!insertError) profile = newProfile;
-      } else {
-        if (MECHANIC_DATA[userEmail] && String(profile.branch_id) !== MECHANIC_DATA[userEmail].branchId) {
-           await supabase.from('profiles').update({ branch_id: Number(MECHANIC_DATA[userEmail].branchId) }).eq('id', userId);
-           finalBranch = MECHANIC_DATA[userEmail].branchId;
-        }
       }
 
       const finalUser: User = {
@@ -179,36 +177,43 @@ const App: React.FC = () => {
 
       if (error) throw error;
       if (data) {
+        const discoveredOrders: AppNotification[] = [];
+        const newOrderIds: string[] = [];
+
         const mapped: AppNotification[] = data.map((log: any) => {
-          // Podstawowy filtr oddziału
           const isRelevantBranch = user.role === 'ADMINISTRATOR' || 
             Number(log.from_branch_id) === branchNum || 
             Number(log.to_branch_id) === branchNum ||
             Number(log.tool?.branch_id) === branchNum;
 
           if (!isRelevantBranch) return null;
-
-          // RESTYKCJA: Mechanik nie widzi powiadomień o zamówieniach (Zapotrzebowaniach)
+          
+          // Mechanik nie widzi zamówień
           if (log.action === 'ZAMÓWIENIE' && !isManager) return null;
 
-          // Automatyczne wyzwalanie modalu zamówienia - TYLKO DLA MANAGERÓW (Doradca/Admin)
+          // Wykrywanie nowych zamówień dla MANAGERA
           if (log.action === 'ZAMÓWIENIE' && 
               isManager && 
               Number(log.tool?.branch_id) === branchNum && 
               !processedOrderIds.includes(log.id)) {
             
-            setPendingOrder({
+            const newOrder: AppNotification = {
               id: log.id,
-              title: 'NOWA PROŚBA',
-              message: `Oddział ${log.to_branch?.name} prosi o ${log.tool?.name}`,
+              title: 'NOWE ZAPYTANIE!',
+              message: `Oddział ${log.to_branch?.name} potrzebuje narzędzia: ${log.tool?.name}.`,
               type: 'WARNING',
               created_at: log.created_at,
               is_read: false,
               tool_id: log.tool?.id,
               raw_log: log
-            });
-            setProcessedOrderIds(prev => [...prev, log.id]);
-            addToast("Nowe zapytanie!", `Oddział ${log.to_branch?.name} potrzebuje narzędzia: ${log.tool?.name}.`, "WARNING");
+            };
+
+            // Sprawdzamy czy już go nie ma w kolejce, aby nie dublować przy szybkim odświeżaniu
+            if (!pendingOrdersQueue.some(po => po.id === log.id)) {
+              discoveredOrders.push(newOrder);
+              newOrderIds.push(log.id);
+              addToast("Nowe zapytanie!", `Oddział ${log.to_branch?.name} prosi o ${log.tool?.name}`, "WARNING");
+            }
           }
 
           return {
@@ -222,10 +227,16 @@ const App: React.FC = () => {
             raw_log: log
           };
         }).filter(n => n !== null) as AppNotification[];
+        
+        // Dodajemy wszystkie znalezione zamówienia do kolejki i bazy przetworzonych
+        if (discoveredOrders.length > 0) {
+           setProcessedOrderIds(prev => [...new Set([...prev, ...newOrderIds])]);
+           setPendingOrdersQueue(prev => [...prev, ...discoveredOrders]);
+        }
         setNotifications(mapped);
       }
     } catch (e) { console.error("Notification Error:", e); }
-  }, [user, simulationBranchId, lastReadAt, processedOrderIds, addToast]);
+  }, [user, simulationBranchId, lastReadAt, processedOrderIds, addToast, pendingOrdersQueue]);
 
   useEffect(() => {
     if (user) {
@@ -244,7 +255,7 @@ const App: React.FC = () => {
     init();
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) fetchProfile(session.user.id, session.user.email);
-      else if (event === 'SIGNED_OUT') { setUser(null); setProcessedOrderIds([]); setNotifications([]); }
+      else if (event === 'SIGNED_OUT') { setUser(null); setProcessedOrderIds([]); setNotifications([]); setPendingOrdersQueue([]); }
     });
     return () => authListener.subscription.unsubscribe();
   }, [fetchProfile]);
@@ -268,11 +279,16 @@ const App: React.FC = () => {
              ))}
            </div>
 
-           {pendingOrder && (
+           {/* WYŚWIETLANIE PIERWSZEGO ELEMENTU Z KOLEJKI */}
+           {pendingOrdersQueue.length > 0 && (
             <OrderRequestModal 
-              order={pendingOrder} 
-              onConfirm={(o) => { setActiveModule('BAZA NARZĘDZI'); setTargetToolId(o.tool_id || null); setPendingOrder(null); }} 
-              onReject={() => setPendingOrder(null)} 
+              order={pendingOrdersQueue[0]} 
+              onConfirm={(o) => { 
+                setActiveModule('BAZA NARZĘDZI'); 
+                setTargetToolId(o.tool_id || null); 
+                setPendingOrdersQueue(prev => prev.slice(1)); // Usuń obsłużone z kolejki
+              }} 
+              onReject={() => setPendingOrdersQueue(prev => prev.slice(1))} 
             />
           )}
 

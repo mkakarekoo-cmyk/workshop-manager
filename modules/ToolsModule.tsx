@@ -57,7 +57,6 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   
   const [transferBranchId, setTransferBranchId] = useState<string>('1');
   const [notes, setNotes] = useState('');
-  
   const [resStartDate, setResStartDate] = useState('');
   const [resEndDate, setResEndDate] = useState('');
 
@@ -102,6 +101,13 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     if (!selectedTool) return false;
     return selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === effectiveBranchId;
   }, [selectedTool, effectiveBranchId]);
+
+  // FIX: Reset formularza przy zmianie narzędzia
+  useEffect(() => {
+    setNotes('');
+    setResStartDate('');
+    setResEndDate('');
+  }, [selectedToolId]);
 
   const fetchGlobalStats = useCallback(async () => {
     try {
@@ -234,8 +240,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
 
   const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE') => {
     if (!selectedTool || isSubmitting) return;
-    if (!canManageLogistics && action !== 'ORDER') return; // Tylko ORDER dopuszczalny (teoretycznie)
-
+    
     setIsSubmitting(true);
     try {
       const targetId = effectiveBranchId;
@@ -267,15 +272,24 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         alert("Narzędzie przekazane do konserwacji.");
       } 
       else if (action === 'TRANSFER') {
-        await createLog({ tool_id: selectedTool.id, action: 'PRZESUNIĘCIE', from_branch_id: selectedTool.branch_id, to_branch_id: Number(transferBranchId), notes: notes || 'Transfer logistyczny', operator_id: user.id });
-        await supabase.from('tools').update({ status: ToolStatus.IN_TRANSIT, target_branch_id: Number(transferBranchId), shipped_at: new Date().toISOString() }).eq('id', selectedTool.id);
+        // UPEWNIAMY SIĘ ŻE LECI TYLKO LOG PRZESUNIĘCIA
+        await createLog({ 
+          tool_id: selectedTool.id, 
+          action: 'PRZESUNIĘCIE', 
+          from_branch_id: selectedTool.branch_id, 
+          to_branch_id: Number(transferBranchId), 
+          notes: notes || 'Transfer logistyczny (akceptacja prośby)', 
+          operator_id: user.id 
+        });
+        await supabase.from('tools').update({ 
+          status: ToolStatus.IN_TRANSIT, 
+          target_branch_id: Number(transferBranchId), 
+          shipped_at: new Date().toISOString() 
+        }).eq('id', selectedTool.id);
         alert(`Narzędzie wysłane!`);
       } 
       else if (action === 'RECEIPT') {
         const myLoc = Number(simulationBranchId === 'all' ? user.branch_id : simulationBranchId);
-        if (Number(selectedTool.target_branch_id) !== myLoc) {
-          throw new Error("Tylko oddział docelowy może potwierdzić odbiór!");
-        }
         const newStatus = myLoc === 1 ? ToolStatus.FREE : ToolStatus.OCCUPIED;
         await supabase.from('tools').update({ status: newStatus, branch_id: myLoc, target_branch_id: null, shipped_at: null }).eq('id', selectedTool.id);
         await createLog({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', to_branch_id: myLoc, notes: `Przyjęto fizycznie w bazie oddziału.`, operator_id: user.id });
@@ -303,14 +317,20 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
           notes: orderNote, 
           operator_id: user.id 
         });
-        alert(`Zapytanie ${resStartDate ? 'z rezerwacją ' : ''}zostało wysłane!`);
+        alert(`Zapytanie zostało wysłane!`);
       }
-      onRefresh();
-      setSelectedToolId(null);
+      
+      // FIX: Czyścimy stan pól po udanej akcji
       setNotes('');
       setResStartDate('');
       setResEndDate('');
-    } catch (e: any) { alert(e.message); } finally { setIsSubmitting(false); }
+      onRefresh();
+      setSelectedToolId(null);
+    } catch (e: any) { 
+      alert(e.message); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   const handleAddTool = async (e: React.FormEvent) => {
