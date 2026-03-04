@@ -238,14 +238,19 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     } catch (e: any) { alert(e.message); }
   };
 
-  const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE') => {
+  const handleLogisticsAction = async (action: 'TRANSFER' | 'RECEIPT' | 'ORDER' | 'MAINTENANCE' | 'RESERVE' | 'FINISH_MAINTENANCE') => {
     if (!selectedTool || isSubmitting) return;
     
     setIsSubmitting(true);
     try {
       const targetId = effectiveBranchId;
 
-      if (action === 'RESERVE') {
+      if (action === 'FINISH_MAINTENANCE') {
+        await createLog({ tool_id: selectedTool.id, action: 'PRZYJĘCIE', notes: `Zakończenie konserwacji. ${notes}`, operator_id: user.id });
+        await supabase.from('tools').update({ status: ToolStatus.FREE }).eq('id', selectedTool.id);
+        alert("Narzędzie przywrócone do użytku.");
+      }
+      else if (action === 'RESERVE') {
         if (!resStartDate || !resEndDate) throw new Error("Wybierz zakres dat!");
         await supabase.from('tool_reservations').insert({
            tool_id: selectedTool.id,
@@ -582,7 +587,15 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {manageTab === 'LOGISTYKA' && canManageLogistics && (isOwner || isRecipient) && (
                     <div className="space-y-8">
-                       {selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === (simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId)) ? (
+                       {selectedTool.status === ToolStatus.MAINTENANCE ? (
+                         <div className="p-10 bg-amber-50 rounded-[3rem] text-center space-y-6">
+                            <Wrench size={48} className="mx-auto text-amber-500 animate-pulse" />
+                            <h4 className="text-3xl font-black text-amber-900 uppercase italic">NARZĘDZIE W KONSERWACJI</h4>
+                            <p className="text-amber-600 font-bold uppercase tracking-widest text-xs italic">To narzędzie jest obecnie wyłączone z użytku.</p>
+                            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opis wykonanych prac (opcjonalnie)..." className="w-full p-4 bg-white border border-amber-200 rounded-xl text-xs font-black uppercase outline-none focus:border-amber-500"></textarea>
+                            <button onClick={() => handleLogisticsAction('FINISH_MAINTENANCE')} className="w-full py-8 bg-[#22c55e] text-white rounded-[2rem] font-black uppercase shadow-xl border-b-8 border-green-900 hover:bg-green-500 transition-all">PRZYWRÓĆ DO UŻYTKU</button>
+                         </div>
+                       ) : selectedTool.status === ToolStatus.IN_TRANSIT && Number(selectedTool.target_branch_id) === (simulationBranchId === 'all' ? Number(user.branch_id) : Number(simulationBranchId)) ? (
                          <div className="p-10 bg-blue-50 rounded-[3rem] text-center space-y-6">
                             <Truck size={48} className="mx-auto text-blue-500 animate-bounce" />
                             <h4 className="text-3xl font-black text-blue-900 uppercase italic">PRZESYŁKA CZEKA NA ODBIÓR</h4>
