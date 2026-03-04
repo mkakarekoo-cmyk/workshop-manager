@@ -78,9 +78,11 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [targetToolId, setTargetToolId] = useState<string | null>(null);
+  const [activeOrderRequest, setActiveOrderRequest] = useState<AppNotification | null>(null);
   
   // KOLEJKA POWIADOMIEŃ
   const [pendingOrdersQueue, setPendingOrdersQueue] = useState<AppNotification[]>([]);
+  const notifiedOrderIds = useRef<Set<string>>(new Set());
   
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   
@@ -93,9 +95,9 @@ const App: React.FC = () => {
     localStorage.setItem('processed_order_ids', JSON.stringify(processedOrderIds));
   }, [processedOrderIds]);
 
-  const addToast = useCallback((title: string, message: string, type: 'INFO' | 'WARNING' | 'SUCCESS') => {
+  const addToast = useCallback((title: string, message: string, type: 'INFO' | 'WARNING' | 'SUCCESS', onClick?: () => void) => {
     const id = Date.now().toString() + Math.random();
-    setToasts(prev => [...prev, { id, title, message, type }]);
+    setToasts(prev => [...prev, { id, title, message, type, onClick: onClick ? () => { onClick(); setToasts(current => current.filter(t => t.id !== id)); } : undefined }]);
   }, []);
 
   const fetchAllUsers = useCallback(async () => {
@@ -188,13 +190,17 @@ const App: React.FC = () => {
 
           if (!isRelevantBranch) return null;
           
+          // Jeśli zamówienie zostało już obsłużone (zaakceptowane/odrzucone), nie pokazujemy go w liście powiadomień
+          if (log.action === 'ZAMÓWIENIE' && processedOrderIds.includes(log.id)) return null;
+
           // Mechanik nie widzi zamówień
           if (log.action === 'ZAMÓWIENIE' && !isManager) return null;
 
           // Wykrywanie nowych zamówień dla MANAGERA
           if (log.action === 'ZAMÓWIENIE' && 
               isManager && 
-              Number(log.tool?.branch_id) === branchNum && 
+              Number(log.from_branch_id) === branchNum && 
+              log.tool?.status !== 'W DRODZE' &&
               !processedOrderIds.includes(log.id)) {
             
             const newOrder: AppNotification = {
@@ -208,11 +214,20 @@ const App: React.FC = () => {
               raw_log: log
             };
 
-            // Sprawdzamy czy już go nie ma w kolejce, aby nie dublować przy szybkim odświeżaniu
+            // Sprawdzamy czy już go nie ma w kolejce
             if (!pendingOrdersQueue.some(po => po.id === log.id)) {
               discoveredOrders.push(newOrder);
-              newOrderIds.push(log.id);
-              addToast("Nowe zapytanie!", `Oddział ${log.to_branch?.name} prosi o ${log.tool?.name}`, "WARNING");
+              
+              // Toast tylko raz na sesję dla danego ID
+              if (!notifiedOrderIds.current.has(log.id)) {
+                notifiedOrderIds.current.add(log.id);
+                addToast(
+                  "Nowe zapytanie!", 
+                  `Oddział ${log.to_branch?.name} prosi o ${log.tool?.name}. Kliknij aby zobaczyć.`, 
+                  "WARNING",
+                  () => setActiveOrderRequest(newOrder)
+                );
+              }
             }
           }
 
@@ -228,10 +243,13 @@ const App: React.FC = () => {
           };
         }).filter(n => n !== null) as AppNotification[];
         
-        // Dodajemy wszystkie znalezione zamówienia do kolejki i bazy przetworzonych
+        // Dodajemy wszystkie znalezione zamówienia do kolejki
         if (discoveredOrders.length > 0) {
-           setProcessedOrderIds(prev => [...new Set([...prev, ...newOrderIds])]);
-           setPendingOrdersQueue(prev => [...prev, ...discoveredOrders]);
+           setPendingOrdersQueue(prev => {
+             const existingIds = new Set(prev.map(p => p.id));
+             const uniqueNew = discoveredOrders.filter(d => !existingIds.has(d.id));
+             return [...prev, ...uniqueNew];
+           });
         }
         setNotifications(mapped);
       }
@@ -279,16 +297,43 @@ const App: React.FC = () => {
              ))}
            </div>
 
-           {/* WYŚWIETLANIE PIERWSZEGO ELEMENTU Z KOLEJKI */}
-           {pendingOrdersQueue.length > 0 && (
+           {/* WYŚWIETLANIE MODALA ZAPOTRZEBOWANIA TYLKO GDY WYBRANE */}
+           {activeOrderRequest && (
             <OrderRequestModal 
-              order={pendingOrdersQueue[0]} 
+              order={activeOrderRequest} 
               onConfirm={(o) => { 
                 setActiveModule('BAZA NARZĘDZI'); 
                 setTargetToolId(o.tool_id || null); 
-                setPendingOrdersQueue(prev => prev.slice(1)); // Usuń obsłużone z kolejki
+                setProcessedOrderIds(prev => [...new Set([...prev, o.id])]);
+                setPendingOrdersQueue(prev => prev.filter(p => p.id !== o.id));
+                setActiveOrderRequest(null);
               }} 
-              onReject={() => setPendingOrdersQueue(prev => prev.slice(1))} 
+              onReject={async (o) => {
+                try {
+                  // Tworzymy log odmowy w bazie danych
+                  const branchName = MOCK_BRANCHES.find(b => String(b.id) === String(user.branch_id))?.name || "Oddział";
+                  await supabase.from('tool_logs').insert({
+                    tool_id: o.tool_id,
+                    action: 'ODMOWA',
+                    from_branch_id: Number(user.branch_id),
+                    to_branch_id: Number(o.raw_log?.to_branch_id),
+                    notes: `Oddział ${branchName} odmówił przekazania narzędzia.`,
+                    operator_id: user.id
+                  });
+                } catch (e) {
+                  console.error("Error creating refusal log:", e);
+                }
+
+                setProcessedOrderIds(prev => [...new Set([...prev, o.id])]);
+                setPendingOrdersQueue(prev => prev.filter(p => p.id !== o.id));
+                setActiveOrderRequest(null);
+                
+                // Pokaż następne jeśli jest w kolejce
+                if (pendingOrdersQueue.length > 1) {
+                  const next = pendingOrdersQueue.find(p => p.id !== o.id);
+                  if (next) setActiveOrderRequest(next);
+                }
+              }} 
             />
           )}
 
@@ -308,19 +353,31 @@ const App: React.FC = () => {
               user={user} activeModule={activeModule} onLogout={() => supabase.auth.signOut()}
               toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} onRefresh={() => setRefreshTrigger(t => t + 1)}
               notifications={notifications} onMarkRead={() => setLastReadAt(Date.now())}
-              onNotificationClick={(n) => { if (n.tool_id) { setActiveModule('BAZA NARZĘDZI'); setTargetToolId(n.tool_id); } }}
+              onNotificationClick={(n) => { 
+                if (n.title.includes('ZAMÓWIENIE')) {
+                  setActiveOrderRequest(n);
+                } else if (n.tool_id) { 
+                  setActiveModule('BAZA NARZĘDZI'); 
+                  setTargetToolId(n.tool_id); 
+                } 
+              }}
               onChangePasswordClick={() => setIsChangePasswordModalOpen(true)}
             />
             <main className="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
                {activeModule === 'DASHBOARD' && user.role === 'ADMINISTRATOR' && <DashboardModule branches={MOCK_BRANCHES} refreshTrigger={refreshTrigger} />}
-               {(activeModule === 'BAZA NARZĘDZI' || activeModule === 'MOJE NARZĘDZIA') && (
-                 <ToolsModule 
-                   user={user} simulationBranchId={simulationBranchId} branches={MOCK_BRANCHES} 
-                   refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(t => t + 1)} 
-                   viewMode={activeModule as any} targetToolId={targetToolId} 
-                   onTargetToolClear={() => setTargetToolId(null)}
-                 />
-               )}
+                {(activeModule === 'BAZA NARZĘDZI' || activeModule === 'MOJE NARZĘDZIA') && (
+                  <ToolsModule 
+                    user={user} simulationBranchId={simulationBranchId} branches={MOCK_BRANCHES} 
+                    refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(t => t + 1)} 
+                    viewMode={activeModule as any} targetToolId={targetToolId} 
+                    onTargetToolClear={() => setTargetToolId(null)}
+                    onActionComplete={() => {
+                      if (pendingOrdersQueue.length > 0) {
+                        setActiveOrderRequest(pendingOrdersQueue[0]);
+                      }
+                    }}
+                  />
+                )}
                {activeModule === 'UŻYTKOWNICY' && <UsersModule user={user} branches={MOCK_BRANCHES} allUsers={allUsers} onRefresh={() => setRefreshTrigger(t => t + 1)} refreshTrigger={refreshTrigger} />}
                {activeModule === 'GRAFIK' && <ScheduleModule user={user} branches={MOCK_BRANCHES} refreshTrigger={refreshTrigger} />}
             </main>

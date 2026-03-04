@@ -8,9 +8,10 @@ export interface ToastProps {
   message: string;
   type: 'INFO' | 'WARNING' | 'SUCCESS';
   onClose: (id: string) => void;
+  onClick?: (id: string) => void;
 }
 
-const Toast: React.FC<ToastProps> = ({ id, title, message, type, onClose }) => {
+const Toast: React.FC<ToastProps> = ({ id, title, message, type, onClose, onClick }) => {
   useEffect(() => {
     const timer = setTimeout(() => onClose(id), 5000);
     return () => clearTimeout(timer);
@@ -29,7 +30,10 @@ const Toast: React.FC<ToastProps> = ({ id, title, message, type, onClose }) => {
   };
 
   return (
-    <div className={`w-80 sm:w-96 bg-white shadow-2xl rounded-2xl border-l-8 ${bgColors[type]} p-5 flex items-start space-x-4 animate-in slide-in-from-right duration-500 mb-4 pointer-events-auto`}>
+    <div 
+      onClick={() => onClick ? onClick(id) : null}
+      className={`w-80 sm:w-96 bg-white shadow-2xl rounded-2xl border-l-8 ${bgColors[type]} p-5 flex items-start space-x-4 animate-in slide-in-from-right duration-500 mb-4 pointer-events-auto ${onClick ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''}`}
+    >
       <div className="p-3 bg-slate-50 rounded-xl shrink-0">
         {title.includes('ZAMÓWIENIE') ? <ShoppingBag size={20} className="text-amber-600" /> : 
          title.includes('WYSYŁKA') || title.includes('DRODZE') ? <Truck size={20} className="text-blue-600" /> : 

@@ -34,10 +34,11 @@ interface ToolsModuleProps {
   onTargetToolClear?: () => void;
   preselectedTargetBranchId?: string | null;
   onPreselectedBranchClear?: () => void;
+  onActionComplete?: () => void;
 }
 
 const ToolsModule: React.FC<ToolsModuleProps> = ({ 
-  user, simulationBranchId, branches, refreshTrigger, onRefresh, viewMode, targetToolId, onTargetToolClear, preselectedTargetBranchId, onPreselectedBranchClear
+  user, simulationBranchId, branches, refreshTrigger, onRefresh, viewMode, targetToolId, onTargetToolClear, preselectedTargetBranchId, onPreselectedBranchClear, onActionComplete
 }) => {
   const [tools, setTools] = useState<Tool[]>([]);
   const [loading, setLoading] = useState(true);
@@ -331,6 +332,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
       setResEndDate('');
       onRefresh();
       setSelectedToolId(null);
+      if (onActionComplete) onActionComplete();
     } catch (e: any) { 
       alert(e.message); 
     } finally { 
