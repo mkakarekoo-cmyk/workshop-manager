@@ -10,6 +10,7 @@ import ToolsModule from './modules/ToolsModule';
 import UsersModule from './modules/UsersModule';
 import ScheduleModule from './modules/ScheduleModule';
 import DashboardModule from './modules/DashboardModule';
+import FleetRedirect from './components/FleetRedirect';
 import { User, ModuleType, Branch, AppNotification, ToolStatus } from './types';
 import { supabase } from './supabase';
 
@@ -380,6 +381,7 @@ const App: React.FC = () => {
                 )}
                {activeModule === 'UŻYTKOWNICY' && <UsersModule user={user} branches={MOCK_BRANCHES} allUsers={allUsers} onRefresh={() => setRefreshTrigger(t => t + 1)} refreshTrigger={refreshTrigger} />}
                {activeModule === 'GRAFIK' && <ScheduleModule user={user} branches={MOCK_BRANCHES} refreshTrigger={refreshTrigger} />}
+               {activeModule === 'MOJA FLOTA' && <FleetRedirect />}
             </main>
           </div>
         </div>

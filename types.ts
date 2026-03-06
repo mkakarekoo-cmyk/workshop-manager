@@ -70,7 +70,7 @@ export interface User {
   assigned_van_id?: string | null;
 }
 
-export type ModuleType = 'DASHBOARD' | 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK' | 'UŻYTKOWNICY';
+export type ModuleType = 'DASHBOARD' | 'BAZA NARZĘDZI' | 'MOJE NARZĘDZIA' | 'GRAFIK' | 'UŻYTKOWNICY' | 'MOJA FLOTA';
 
 export interface AppNotification {
   id: string;

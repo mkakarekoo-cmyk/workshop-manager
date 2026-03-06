@@ -15,6 +15,15 @@ interface ScheduleModuleProps {
   refreshTrigger: number;
 }
 
+const BRANCH_COLORS: Record<string, string> = {
+  '1': 'bg-blue-600',    // Porosły (HUB)
+  '2': 'bg-emerald-600', // Karniewo
+  '3': 'bg-amber-600',   // Łomża
+  '4': 'bg-indigo-600',  // Brzozów
+  '5': 'bg-rose-600',    // Suwałki
+  '6': 'bg-cyan-600',    // Serwis Porosły
+};
+
 const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refreshTrigger }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [reservations, setReservations] = useState<ToolReservation[]>([]);
@@ -112,12 +121,12 @@ const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refresh
         </div>
 
         <div className="flex items-center space-x-6">
-           <div className="flex -space-x-3">
+           <div className="hidden lg:flex items-center space-x-4 mr-6 px-6 py-2 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-4 italic">Legenda:</p>
               {branches.map(b => (
-                <div key={b.id} title={b.name} className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-black text-white shadow-md ${
-                  b.id === '6' ? 'bg-amber-500' : b.id === '1' ? 'bg-blue-500' : 'bg-green-500'
-                }`}>
-                  {b.name.charAt(0)}
+                <div key={b.id} className="flex items-center space-x-2">
+                   <div className={`w-3 h-3 rounded-full ${BRANCH_COLORS[b.id] || 'bg-slate-400'}`}></div>
+                   <span className="text-[9px] font-black text-slate-600 uppercase italic">{b.name}</span>
                 </div>
               ))}
            </div>
@@ -133,20 +142,20 @@ const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refresh
          ))}
       </div>
 
-      <div className="grid grid-cols-7 auto-rows-[160px] bg-slate-100 gap-[1px] border-b border-slate-100">
+      <div className="grid grid-cols-7 auto-rows-[180px] bg-slate-200 gap-[1px] border-b border-slate-200">
          {calendarDays.map((item, idx) => {
            const dayReservations = getReservationsForDay(item.date);
            const isToday = isSameDay(item.date, new Date());
            
            return (
-             <div key={idx} className={`relative p-0 flex flex-col transition-all overflow-hidden ${item.currentMonth ? 'bg-white' : 'bg-slate-50/50'}`}>
-                <div className="flex justify-between items-start p-2 mb-1">
-                  <span className={`text-[12px] font-black p-2 rounded-full w-8 h-8 flex items-center justify-center ${isToday ? 'bg-[#22c55e] text-white shadow-lg' : item.currentMonth ? 'text-slate-800' : 'text-slate-300'}`}>
+             <div key={idx} className={`relative p-0 flex flex-col transition-all overflow-hidden ${item.currentMonth ? 'bg-white' : 'bg-slate-50/30'}`}>
+                <div className="flex justify-center items-start pt-2 shrink-0">
+                  <span className={`text-[13px] font-black p-2 rounded-full w-9 h-9 flex items-center justify-center transition-all ${isToday ? 'bg-[#22c55e] text-white shadow-lg scale-110' : item.currentMonth ? 'text-slate-800 hover:bg-slate-100' : 'text-slate-300'}`}>
                     {item.day}
                   </span>
                 </div>
                 
-                <div className="space-y-1 relative h-full">
+                <div className="mt-2 space-y-1 relative h-full px-1 overflow-y-auto no-scrollbar pb-2">
                    {dayReservations.map((res) => {
                      const isStart = isSameDay(new Date(res.start_date), item.date);
                      const isEnd = isSameDay(new Date(res.end_date), item.date);
@@ -155,22 +164,22 @@ const ScheduleModule: React.FC<ScheduleModuleProps> = ({ user, branches, refresh
                      // Wyświetlamy tekst tylko w dniu startu LUB w każdy poniedziałek (jeśli event trwa dłużej)
                      const showText = isStart || isMonday;
                      
-                     const branchColor = res.branch_id === 6 ? 'bg-amber-500' : res.branch_id === 1 ? 'bg-blue-600' : 'bg-[#22c55e]';
+                     const branchColor = BRANCH_COLORS[String(res.branch_id)] || 'bg-slate-500';
                      
                      return (
                        <div 
                          key={res.id} 
                          onClick={() => setSelectedRes(res)}
-                         className={`h-6 flex items-center text-[8px] font-black text-white uppercase tracking-tighter cursor-pointer transition-all hover:brightness-110 shadow-sm
+                         className={`h-7 flex items-center text-[10px] font-black text-white uppercase tracking-tight cursor-pointer transition-all hover:brightness-110 shadow-sm border-l-4 border-black/10
                            ${branchColor} 
-                           ${isStart ? 'rounded-l-md ml-1' : 'ml-0'} 
-                           ${isEnd ? 'rounded-r-md mr-1' : 'mr-0'}
+                           ${isStart ? 'rounded-l-lg ml-0.5' : 'ml-0'} 
+                           ${isEnd ? 'rounded-r-lg mr-0.5' : 'mr-0'}
                          `}
                        >
                          {showText && (
-                           <div className="flex items-center px-2 truncate">
-                             {isStart && <Wrench size={10} className="mr-2 shrink-0"/>}
-                             <span className="truncate">{res.tool?.name} ({res.branch?.name})</span>
+                           <div className="flex items-center px-2 truncate w-full">
+                             {isStart && <Wrench size={11} className="mr-2 shrink-0 opacity-80"/>}
+                             <span className="truncate drop-shadow-md">{res.tool?.name}</span>
                            </div>
                          )}
                        </div>

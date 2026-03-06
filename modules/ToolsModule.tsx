@@ -173,7 +173,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
     try {
       let query = supabase
         .from('tools')
-        .select('*, current_branch:branches!tools_branch_id_fkey(name), target_branch:branches!tools_target_branch_id_fkey(name)')
+        .select('*, current_branch:branches!tools_branch_id_fkey(name), target_branch:branches!tools_target_branch_id_fkey(name)', { count: 'exact' })
         .order('name', { ascending: true })
         .range(currentOffset, currentOffset + PAGE_SIZE - 1);
 
@@ -189,7 +189,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         query = query.or(`name.ilike.%${searchTerm}%,serial_number.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`);
       }
 
-      const { data, error } = await query;
+      const { data, error, count } = await query;
       if (error) throw error;
       if (data) {
         setTools(prev => isLoadMore ? [...prev, ...data] : data);
@@ -437,7 +437,7 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
   };
 
   return (
-    <div className="p-4 sm:p-8 lg:p-14 space-y-8 sm:space-y-12 pb-40 animate-in fade-in duration-700">
+    <div className="p-2 sm:p-4 lg:p-6 space-y-4 sm:space-y-6 pb-40 animate-in fade-in duration-700">
       
       {showRlsFix && isAdmin && (
         <div className="bg-rose-600 p-8 sm:p-14 rounded-[2.5rem] sm:rounded-[4rem] shadow-2xl border-b-8 border-rose-900 text-white animate-in slide-in-from-top-12 duration-700 relative overflow-hidden">
@@ -459,11 +459,11 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
-        <StatCard label="W TRANSPORCIE" color="blue" icon={<Truck size={20}/>} value={globalStats.inTransit} />
-        <StatCard label="WYDANE" color="rose" icon={<Package size={20}/>} value={globalStats.occupied} />
-        <StatCard label="W SERWISIE" color="amber" icon={<AlertTriangle size={20}/>} value={globalStats.maintenance} />
-        <StatCard label="DOSTĘPNE" color="green" icon={<CheckCircle size={20}/>} value={globalStats.free} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <StatCard label="W TRANSPORCIE" color="blue" icon={<Truck size={16}/>} value={globalStats.inTransit} />
+        <StatCard label="WYDANE" color="rose" icon={<Package size={16}/>} value={globalStats.occupied} />
+        <StatCard label="W SERWISIE" color="amber" icon={<AlertTriangle size={16}/>} value={globalStats.maintenance} />
+        <StatCard label="DOSTĘPNE" color="green" icon={<CheckCircle size={16}/>} value={globalStats.free} />
       </div>
 
       <div className="flex bg-slate-100 p-2 rounded-[2rem] sm:rounded-[3rem] shadow-inner overflow-x-auto no-scrollbar gap-2">
@@ -473,44 +473,44 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
          <BrandTab active={selectedBrand === BRANDS.GENERAL} onClick={() => setSelectedBrand(BRANDS.GENERAL)} icon={<Hammer size={16}/>} label="OGÓLNE" color="bg-slate-600" />
       </div>
 
-      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-6 bg-[#0f172a] p-6 sm:p-10 rounded-[2rem] lg:rounded-[4rem] shadow-2xl border-b-8 border-[#22c55e]">
+      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-[#0f172a] p-4 sm:p-6 rounded-[1.5rem] lg:rounded-[2.5rem] shadow-2xl border-b-4 border-[#22c55e]">
         <div className="relative z-10">
-          <h2 className="text-2xl sm:text-5xl font-black text-white uppercase italic tracking-tighter leading-none mb-2 sm:mb-3">{viewMode}</h2>
-          <div className="flex items-center mt-2 sm:mt-4">
-             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#22c55e]/10 rounded-xl flex items-center justify-center text-[#22c55e] mr-4 shadow-inner">
-                <MapPinned size={16}/>
+          <h2 className="text-xl sm:text-3xl font-black text-white uppercase italic tracking-tighter leading-none mb-1 sm:mb-2">{viewMode}</h2>
+          <div className="flex items-center mt-1 sm:mt-2">
+             <div className="w-6 h-6 sm:w-8 sm:h-8 bg-[#22c55e]/10 rounded-lg flex items-center justify-center text-[#22c55e] mr-3 shadow-inner">
+                <MapPinned size={14}/>
              </div>
-             <p className="text-[#22c55e] text-[9px] sm:text-[11px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] italic">
+             <p className="text-[#22c55e] text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] italic">
                {selectedBrand !== 'ALL' ? `KATEGORIA: ${selectedBrand}` : viewMode === 'BAZA NARZĘDZI' ? 'WSZYSTKIE ODDZIAŁY' : `TWOJA LOKALIZACJA: ${branches.find(b => String(b.id) === String(effectiveBranchId))?.name.toUpperCase()}`}
              </p>
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto z-10">
-          <div className="relative group w-full lg:w-[450px]">
-             <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-             <input type="text" placeholder="Szukaj zasobu..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-14 pr-6 py-4 sm:py-6 bg-slate-800 text-white border border-slate-700 rounded-[1.5rem] sm:rounded-[2.5rem] text-xs sm:text-sm font-black outline-none focus:border-[#22c55e] uppercase transition-all" />
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto z-10">
+          <div className="relative group w-full lg:w-[350px]">
+             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+             <input type="text" placeholder="Szukaj zasobu..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-5 py-3 sm:py-4 bg-slate-800 text-white border border-slate-700 rounded-[1rem] sm:rounded-[1.5rem] text-xs font-black outline-none focus:border-[#22c55e] uppercase transition-all" />
           </div>
           {isAdmin && (
-            <button onClick={() => setIsAddModalOpen(true)} className="w-full sm:w-auto px-8 py-4 sm:py-6 bg-[#22c55e] text-white rounded-[1.5rem] sm:rounded-[2.2rem] text-[10px] font-black uppercase tracking-widest shadow-2xl border-b-4 border-green-800 flex items-center justify-center space-x-3 transition-all active:scale-95"><Plus size={18}/><span>Dodaj Narzędzie</span></button>
+            <button onClick={() => setIsAddModalOpen(true)} className="w-full sm:w-auto px-6 py-3 sm:py-4 bg-[#22c55e] text-white rounded-[1rem] sm:rounded-[1.5rem] text-[9px] font-black uppercase tracking-widest shadow-2xl border-b-4 border-green-800 flex items-center justify-center space-x-2 transition-all active:scale-95"><Plus size={16}/><span>Dodaj Narzędzie</span></button>
           )}
         </div>
       </div>
 
-      <div className="bg-white rounded-[2rem] lg:rounded-[4rem] shadow-3xl border border-slate-100 overflow-hidden relative min-h-[400px]">
+      <div className="bg-white rounded-[1.5rem] lg:rounded-[2.5rem] shadow-3xl border border-slate-100 overflow-hidden relative flex flex-col h-[calc(100vh-320px)] min-h-[400px]">
         {loading && !loadingMore && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-20">
-             <Loader className="animate-spin text-[#22c55e]" size={40}/>
+             <Loader className="animate-spin text-[#22c55e]" size={32}/>
           </div>
         )}
         
-        <div className="hidden lg:block overflow-x-auto no-scrollbar">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50/80 text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] border-b border-slate-100 italic">
-                <th className="px-12 py-8 w-2/5">Zasób / Specyfikacja</th>
-                <th className="px-12 py-8">Lokalizacja</th>
-                <th className="px-12 py-8">Status</th>
-                <th className="px-12 py-8 text-right">Akcja Systemowa</th>
+        <div className="hidden lg:block flex-1 overflow-y-auto no-scrollbar scroll-smooth">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-slate-50/95 backdrop-blur-md text-slate-400 text-[9px] font-black uppercase tracking-[0.3em] border-b border-slate-100 italic">
+                <th className="px-8 py-4 w-2/5">Zasób / Specyfikacja</th>
+                <th className="px-8 py-4">Lokalizacja</th>
+                <th className="px-8 py-4">Status</th>
+                <th className="px-8 py-4 text-right">Akcja Systemowa</th>
               </tr>
             </thead>
             <tbody className="divide-y-2 divide-slate-50">
@@ -541,12 +541,36 @@ const ToolsModule: React.FC<ToolsModuleProps> = ({
               ))}
             </tbody>
           </table>
+          
+          {tools.length >= PAGE_SIZE && tools.length % PAGE_SIZE === 0 && (
+            <div className="p-12 text-center border-t border-slate-50">
+               <button 
+                onClick={() => fetchTools(true)} 
+                disabled={loadingMore}
+                className="px-12 py-5 bg-slate-100 text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center space-x-3 mx-auto disabled:opacity-50"
+               >
+                 {loadingMore ? <Loader className="animate-spin" size={16}/> : <Plus size={16}/>}
+                 <span>{loadingMore ? 'Ładowanie...' : 'Załaduj więcej narzędzi'}</span>
+               </button>
+            </div>
+          )}
         </div>
 
-        <div className="lg:hidden p-4 space-y-4">
+        <div className="lg:hidden flex-1 overflow-y-auto no-scrollbar p-4 space-y-4">
            {tools.map(tool => (
              <ToolCard key={tool.id} tool={tool} effectiveBranchId={effectiveBranchId} user={user} canManageLogistics={canManageLogistics} onSelect={setSelectedToolId} onEdit={() => handleOpenEdit(tool)} getToolImageUrl={getToolImageUrl} simulationBranchId={simulationBranchId} BRANDS={BRANDS} />
            ))}
+           
+           {tools.length >= PAGE_SIZE && tools.length % PAGE_SIZE === 0 && (
+             <button 
+              onClick={() => fetchTools(true)} 
+              disabled={loadingMore}
+              className="w-full py-5 bg-slate-100 text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center space-x-3 disabled:opacity-50"
+             >
+               {loadingMore ? <Loader className="animate-spin" size={16}/> : <Plus size={16}/>}
+               <span>{loadingMore ? 'Ładowanie...' : 'Załaduj więcej'}</span>
+             </button>
+           )}
         </div>
       </div>
 
@@ -868,52 +892,52 @@ const ToolRow = ({ tool, effectiveBranchId, user, canManageLogistics, onSelect, 
   };
 
   return (
-    <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isPhysicallyHere ? 'bg-green-50/20 border-l-8 border-l-[#22c55e]' : ''} ${isHeadingToThisBranch ? 'bg-blue-50/50 ring-4 ring-blue-500/20' : ''}`}>
-      <td className="px-12 py-8">
-        <div className="flex items-center space-x-8">
-          <div className="w-20 h-16 bg-white rounded-[1.2rem] overflow-hidden shadow-xl border border-slate-100 cursor-zoom-in relative group/img" onClick={(e) => { e.stopPropagation(); onZoom(getToolImageUrl(tool.photo_path)); }}>
+    <tr className={`group hover:bg-slate-50/50 transition-all duration-300 ${isPhysicallyHere ? 'bg-green-50/20 border-l-4 border-l-[#22c55e]' : ''} ${isHeadingToThisBranch ? 'bg-blue-50/50 ring-2 ring-blue-500/20' : ''}`}>
+      <td className="px-8 py-4">
+        <div className="flex items-center space-x-6">
+          <div className="w-16 h-12 bg-white rounded-lg overflow-hidden shadow-md border border-slate-100 cursor-zoom-in relative group/img" onClick={(e) => { e.stopPropagation(); onZoom(getToolImageUrl(tool.photo_path)); }}>
             <img src={getToolImageUrl(tool.photo_path)} className="w-full h-full object-cover group-hover/img:scale-110 transition-transform" alt="" />
           </div>
           <div className="max-w-md">
-            <div className="flex items-center space-x-3 mb-2">
-               <span className={`px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest ${brandStyles[tool.category] || 'bg-slate-100 text-slate-500'}`}>{tool.category || 'INNE'}</span>
+            <div className="flex items-center space-x-2 mb-1">
+               <span className={`px-1.5 py-0.5 rounded text-[6px] font-black uppercase tracking-widest ${brandStyles[tool.category] || 'bg-slate-100 text-slate-500'}`}>{tool.category || 'INNE'}</span>
             </div>
-            <p className="font-black text-[#0f172a] uppercase text-base tracking-tighter italic leading-none">{tool.name}</p>
-            <div className="flex items-center mt-2">
-               {(isPhysicallyHere || isHeadingToThisBranch) && <span className="text-[8px] font-black text-[#22c55e] uppercase tracking-widest mr-3 flex items-center bg-white px-2 py-0.5 rounded border border-green-100"><CheckCircle size={10} className="mr-1"/> {isHeadingToThisBranch ? 'TWOJA PRZESYŁKA' : 'TWÓJ ZASÓB'}</span>}
-               <p className="text-[8px] font-mono font-black text-slate-300 uppercase tracking-widest">S/N: {tool.serial_number}</p>
+            <p className="font-black text-[#0f172a] uppercase text-sm tracking-tighter italic leading-none">{tool.name}</p>
+            <div className="flex items-center mt-1">
+               {(isPhysicallyHere || isHeadingToThisBranch) && <span className="text-[7px] font-black text-[#22c55e] uppercase tracking-widest mr-2 flex items-center bg-white px-1.5 py-0.5 rounded border border-green-100"><CheckCircle size={8} className="mr-1"/> {isHeadingToThisBranch ? 'TWOJA' : 'TWÓJ'}</span>}
+               <p className="text-[7px] font-mono font-black text-slate-300 uppercase tracking-widest">S/N: {tool.serial_number}</p>
             </div>
           </div>
         </div>
       </td>
-      <td className="px-12 py-8">
-         <div className={`inline-flex items-center px-4 py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest ${isPhysicallyHere ? 'bg-white text-[#22c55e] border-[#22c55e]/30' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
-            <MapPin size={12} className="mr-2" /> {(tool.current_branch?.name || 'HUB').toUpperCase()}
+      <td className="px-8 py-4">
+         <div className={`inline-flex items-center px-3 py-1.5 rounded-lg border text-[8px] font-black uppercase tracking-widest ${isPhysicallyHere ? 'bg-white text-[#22c55e] border-[#22c55e]/30' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+            <MapPin size={10} className="mr-1.5" /> {(tool.current_branch?.name || 'HUB').toUpperCase()}
          </div>
       </td>
-      <td className="px-12 py-8">
-         <div className={`flex items-center space-x-3 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : tool.status === ToolStatus.IN_TRANSIT ? 'text-blue-500 font-black' : tool.status === ToolStatus.RESERVED ? 'text-rose-500 font-black' : 'text-slate-400'}`}>
-            <span className={`w-2 h-2 rounded-full bg-current ${tool.status !== ToolStatus.FREE ? 'animate-pulse' : ''}`}></span>
-            <span className="text-[10px] font-black uppercase tracking-widest italic">{tool.status}</span>
+      <td className="px-8 py-4">
+         <div className={`flex items-center space-x-2 ${tool.status === ToolStatus.FREE ? 'text-[#22c55e]' : tool.status === ToolStatus.MAINTENANCE ? 'text-amber-500' : tool.status === ToolStatus.IN_TRANSIT ? 'text-blue-500 font-black' : tool.status === ToolStatus.RESERVED ? 'text-rose-500 font-black' : 'text-slate-400'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full bg-current ${tool.status !== ToolStatus.FREE ? 'animate-pulse' : ''}`}></span>
+            <span className="text-[9px] font-black uppercase tracking-widest italic">{tool.status}</span>
          </div>
       </td>
-      <td className="px-12 py-8 text-right">
-         <div className="flex items-center justify-end space-x-3">
+      <td className="px-8 py-4 text-right">
+         <div className="flex items-center justify-end space-x-2">
             {isAdmin && (
               <>
                 <button 
                   onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                  className="p-4 bg-amber-50 text-amber-500 rounded-xl hover:bg-amber-500 hover:text-white transition-all shadow-xl"
+                  className="p-3 bg-amber-50 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all shadow-md"
                   title="Edytuj zasób"
                 >
-                  <Edit2 size={16}/>
+                  <Edit2 size={14}/>
                 </button>
                 <button 
                   onClick={(e) => { e.stopPropagation(); isConfirming ? handleDeleteTool(tool.id) : onDelete(tool.id); }}
-                  className={`p-4 rounded-xl transition-all ${isConfirming ? 'bg-rose-600 text-white px-8' : 'bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white'}`}
+                  className={`p-3 rounded-lg transition-all ${isConfirming ? 'bg-rose-600 text-white px-6' : 'bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white'}`}
                   title="Usuń zasób"
                 >
-                  {isConfirming ? "TAK" : <Trash2 size={16}/>}
+                  {isConfirming ? "TAK" : <Trash2 size={14}/>}
                 </button>
               </>
             )}
@@ -921,25 +945,25 @@ const ToolRow = ({ tool, effectiveBranchId, user, canManageLogistics, onSelect, 
             {isHeadingToThisBranch ? (
               <button 
                 onClick={() => onSelect(tool.id)} 
-                className={`px-10 py-5 ${canManageLogistics ? 'bg-blue-600 animate-bounce active:scale-95' : 'bg-slate-100 text-slate-400'} text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 ${canManageLogistics ? 'border-blue-900 shadow-xl' : 'border-slate-200'}`}
+                className={`px-6 py-3 ${canManageLogistics ? 'bg-blue-600 animate-bounce active:scale-95' : 'bg-slate-100 text-slate-400'} text-white rounded-[1.2rem] text-[8px] font-black uppercase tracking-widest border-b-2 ${canManageLogistics ? 'border-blue-900 shadow-md' : 'border-slate-200'}`}
               >
                  {canManageLogistics ? 'ODBIERZ' : 'SZCZEGÓŁY'}
               </button>
             ) : isHeadingElsewhere ? (
-              <button onClick={() => onSelect(tool.id)} className="px-10 py-5 bg-slate-100 text-slate-400 rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4 border-slate-200">
+              <button onClick={() => onSelect(tool.id)} className="px-6 py-3 bg-slate-100 text-slate-400 rounded-[1.2rem] text-[8px] font-black uppercase tracking-widest border-b-2 border-slate-200">
                  W DRODZE
               </button>
             ) : isPhysicallyHere ? (
               <button 
                 onClick={() => onSelect(tool.id)} 
-                className={`px-10 py-5 ${canManageLogistics ? 'bg-[#0f172a] hover:bg-[#22c55e] active:scale-95 border-black shadow-xl' : 'bg-slate-100 text-slate-600 border-slate-200'} text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4`}
+                className={`px-6 py-3 ${canManageLogistics ? 'bg-[#0f172a] hover:bg-[#22c55e] active:scale-95 border-black shadow-md' : 'bg-slate-100 text-slate-600 border-slate-200'} text-white rounded-[1.2rem] text-[8px] font-black uppercase tracking-widest border-b-2`}
               >
                  {canManageLogistics ? 'ZARZĄDZAJ' : 'SZCZEGÓŁY'}
               </button>
             ) : (
               <button 
                 onClick={() => onSelect(tool.id)} 
-                className={`px-10 py-5 ${canManageLogistics ? 'bg-amber-500 hover:bg-amber-600 active:scale-95 border-amber-800 shadow-xl' : 'bg-slate-100 text-slate-400 border-slate-200'} text-white rounded-[1.8rem] text-[9px] font-black uppercase tracking-widest border-b-4`}
+                className={`px-6 py-3 ${canManageLogistics ? 'bg-amber-500 hover:bg-amber-600 active:scale-95 border-amber-800 shadow-md' : 'bg-slate-100 text-slate-400 border-slate-200'} text-white rounded-[1.2rem] text-[8px] font-black uppercase tracking-widest border-b-2`}
               >
                  {canManageLogistics ? 'ZAMÓW' : 'PODGLĄD'}
               </button>
@@ -1016,10 +1040,10 @@ const ToolCard = ({ tool, effectiveBranchId, user, canManageLogistics, onSelect,
 const StatCard = ({ label, value, color, icon }: any) => {
   const themes: any = { blue: 'text-blue-600 bg-blue-50', rose: 'text-rose-600 bg-rose-50', amber: 'text-amber-600 bg-amber-50', green: 'text-[#22c55e] bg-green-50' };
   return (
-    <div className="p-4 sm:p-8 rounded-[1.5rem] sm:rounded-[2.5rem] bg-white shadow-xl flex flex-col items-center text-center border border-slate-50">
-      <div className={`p-3 sm:p-5 rounded-xl sm:rounded-2xl mb-2 sm:mb-4 ${themes[color]}`}>{icon}</div>
-      <p className="text-[7px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 italic">{label}</p>
-      <h3 className="text-2xl sm:text-5xl font-black italic text-slate-800 tracking-tighter">{value}</h3>
+    <div className="p-3 sm:p-5 rounded-[1.2rem] sm:rounded-[1.8rem] bg-white shadow-lg flex flex-col items-center text-center border border-slate-50">
+      <div className={`p-2 sm:p-3 rounded-lg sm:rounded-xl mb-1 sm:mb-2 ${themes[color]}`}>{icon}</div>
+      <p className="text-[6px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400 mb-0.5 italic">{label}</p>
+      <h3 className="text-xl sm:text-3xl font-black italic text-slate-800 tracking-tighter leading-none">{value}</h3>
     </div>
   );
 };
