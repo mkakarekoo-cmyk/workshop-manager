@@ -67,11 +67,8 @@ modules/
 - **MECHANIK** — widzi narzędzia swojego oddziału, może zamawiać
 
 ## Przypisania specjalne (hardcoded w App.tsx)
-- `m.kakarekoo@gmail.com` → ADMINISTRATOR
-- `adam.wnorowski@contractus.com.pl` → DORADCA, oddział 6
-- `serwis.karniewo@contractus.com.pl` → DORADCA, oddział 2
-- `andrzej.chlabicz@contractus.com.pl` → DORADCA, oddział 1
-- `serwis.lomza@contractus.com.pl` → DORADCA, oddział 3
+Emaile adminów i doradców są zakodowane bezpośrednio w `App.tsx` (stałe MASTER_ADMIN_EMAIL, SPECIAL_USER_*).
+Lista mechaników i ich oddziałów: mapa `MECHANIC_DATA` w App.tsx.
 
 ## Statusy narzędzi (ToolStatus)
 `WOLNE` | `ZAJĘTE` | `W DRODZE` | `KONSERWACJA` | `ZAREZERWOWANE`
