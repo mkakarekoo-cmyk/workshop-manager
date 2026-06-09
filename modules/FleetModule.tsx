@@ -11,7 +11,7 @@ import { Vehicle, Branch, User, VanDrawerWithItems } from '../types';
 import Lightbox from '../components/Lightbox';
 import { supabase } from '../supabase';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://cuctnnsgvxhomxobpchi.supabase.co';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 interface FleetModuleProps {
   user: User;

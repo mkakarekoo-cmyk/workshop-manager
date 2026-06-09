@@ -13,7 +13,7 @@ import Lightbox from '../components/Lightbox';
 import { supabase } from '../supabase';
 
 const PAGE_SIZE = 50;
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://cuctnnsgvxhomxobpchi.supabase.co';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 const BRANDS = {
   JD: 'JOHN DEERE',
