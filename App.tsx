@@ -10,8 +10,8 @@ import ToolsModule from './modules/ToolsModule';
 import UsersModule from './modules/UsersModule';
 import ScheduleModule from './modules/ScheduleModule';
 import DashboardModule from './modules/DashboardModule';
-import FleetRedirect from './components/FleetRedirect';
-import { User, ModuleType, Branch, AppNotification, ToolStatus } from './types';
+import FleetModule from './modules/FleetModule';
+import { User, ModuleType, Branch, AppNotification, ToolStatus, Vehicle } from './types';
 import { supabase } from './supabase';
 
 const MOCK_BRANCHES: Branch[] = [
@@ -37,6 +37,7 @@ const App: React.FC = () => {
   const [lastReadAt, setLastReadAt] = useState<number>(Date.now());
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [targetToolId, setTargetToolId] = useState<string | null>(null);
   const [activeOrderRequest, setActiveOrderRequest] = useState<AppNotification | null>(null);
   
@@ -66,6 +67,14 @@ const App: React.FC = () => {
       if (error) throw error;
       if (data) setAllUsers(data as User[]);
     } catch (e) { console.error("Fetch Users Error:", e); }
+  }, []);
+
+  const fetchVehicles = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('vehicles').select('*').order('plate_number');
+      if (error) throw error;
+      if (data) setVehicles(data as Vehicle[]);
+    } catch (e) { console.error("Fetch Vehicles Error:", e); }
   }, []);
 
   const fetchProfile = useCallback(async (userId: string, email?: string, registrationData?: { firstName: string, lastName: string }) => {
@@ -103,8 +112,9 @@ const App: React.FC = () => {
       if (finalUser.role === 'ADMINISTRATOR') setActiveModule('DASHBOARD');
       setSimulationBranchId(finalUser.role === 'ADMINISTRATOR' ? 'all' : finalUser.branch_id || '1');
       if (finalUser.role === 'ADMINISTRATOR') fetchAllUsers();
+      fetchVehicles();
     } catch (e) { console.error("Critical Profile Error:", e); } finally { setLoading(false); }
-  }, [fetchAllUsers]);
+  }, [fetchAllUsers, fetchVehicles]);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -200,10 +210,11 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user) {
       fetchNotifications();
-      const interval = setInterval(() => fetchNotifications(), 30000); 
+      fetchVehicles();
+      const interval = setInterval(() => fetchNotifications(), 30000);
       return () => clearInterval(interval);
     }
-  }, [user, simulationBranchId, fetchNotifications, refreshTrigger]);
+  }, [user, simulationBranchId, fetchNotifications, fetchVehicles, refreshTrigger]);
 
   useEffect(() => {
     const init = async () => {
@@ -321,7 +332,14 @@ const App: React.FC = () => {
                 )}
                {activeModule === 'UŻYTKOWNICY' && <UsersModule user={user} branches={MOCK_BRANCHES} allUsers={allUsers} onRefresh={() => setRefreshTrigger(t => t + 1)} refreshTrigger={refreshTrigger} />}
                {activeModule === 'GRAFIK' && <ScheduleModule user={user} branches={MOCK_BRANCHES} refreshTrigger={refreshTrigger} />}
-               {activeModule === 'MOJA FLOTA' && <FleetRedirect />}
+               {activeModule === 'MOJA FLOTA' && (
+                 <FleetModule
+                   user={user} simulationBranchId={simulationBranchId}
+                   branches={MOCK_BRANCHES} vehicles={vehicles}
+                   refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(t => t + 1)}
+                   allUsers={allUsers}
+                 />
+               )}
             </main>
           </div>
         </div>

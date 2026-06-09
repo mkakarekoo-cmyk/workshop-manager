@@ -47,7 +47,7 @@ modules/
   DashboardModule.tsx ← statystyki (tylko ADMINISTRATOR)
   UsersModule.tsx    ← zarządzanie użytkownikami
   ScheduleModule.tsx ← grafik
-  FleetModule.tsx    ← flota
+  FleetModule.tsx    ← flota (podłączona do App.tsx; tabele: vehicles, van_drawers, van_inventory_items)
   WorkshopModule.tsx ← szafki i sprzęt warsztatowy
 ```
 
@@ -66,9 +66,9 @@ modules/
 - **DORADCA SERWISOWY** — zarządza narzędziami swojego oddziału, akceptuje zamówienia
 - **MECHANIK** — widzi narzędzia swojego oddziału, może zamawiać
 
-## Przypisania specjalne (hardcoded w App.tsx)
-Emaile adminów i doradców są zakodowane bezpośrednio w `App.tsx` (stałe MASTER_ADMIN_EMAIL, SPECIAL_USER_*).
-Lista mechaników i ich oddziałów: mapa `MECHANIC_DATA` w App.tsx.
+## Role i oddziały
+Role i oddziały wszystkich użytkowników są przechowywane w tabeli `profiles` w Supabase.
+Admin email pochodzi z zmiennej środowiskowej `VITE_ADMIN_EMAIL` (w `.env.local`, nie commitować).
 
 ## Statusy narzędzi (ToolStatus)
 `WOLNE` | `ZAJĘTE` | `W DRODZE` | `KONSERWACJA` | `ZAREZERWOWANE`
@@ -89,6 +89,6 @@ Lista mechaników i ich oddziałów: mapa `MECHANIC_DATA` w App.tsx.
 - `lastReadAt` — timestamp ostatniego odczytu → is_read
 
 ## Ważne uwagi
-- `MECHANIC_DATA` w App.tsx — hardcoded przypisanie email → oddział. Przy dodaniu nowego mechanika edytuj tę mapę.
 - Brak Tailwind — klasy CSS pisane inline jako string
-- WorkshopModule i FleetModule — częściowo zaimplementowane
+- WorkshopModule — częściowo zaimplementowana
+- Zmienne środowiskowe: `VITE_ADMIN_EMAIL` i `VITE_SUPABASE_URL` w `.env.local` (nie commitować)
