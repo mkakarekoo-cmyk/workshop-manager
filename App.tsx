@@ -23,48 +23,7 @@ const MOCK_BRANCHES: Branch[] = [
   { id: '6', name: 'Serwis Porosły', location: 'Porosły' },
 ];
 
-const MASTER_ADMIN_EMAIL = 'm.kakarekoo@gmail.com';
-const SPECIAL_USER_ADAM = 'adam.wnorowski@contractus.com.pl'; // Serwis Porosły (6)
-const SPECIAL_USER_KARNIEWO = 'serwis.karniewo@contractus.com.pl'; // Karniewo (2)
-const SPECIAL_USER_ANDRZEJ = 'andrzej.chlabicz@contractus.com.pl'; // Porosły (1)
-const SPECIAL_USER_LOMZA = 'serwis.lomza@contractus.com.pl'; // Łomża (3)
-
-const MECHANIC_DATA: Record<string, { branchId: string }> = {
-  'marek.hapon@contractus.com.pl': { branchId: '1' },
-  'adam.dera@contractus.com.pl': { branchId: '1' },
-  'andrzej.romaniuk@contractus.com.pl': { branchId: '1' },
-  'pawel.orlowski@contractus.com.pl': { branchId: '1' },
-  'mariusz.gromko@contractus.com.pl': { branchId: '1' },
-  'mateusz.kakareko@contractus.com.pl': { branchId: '1' },
-  'marek.kietlinski@contractus.com.pl': { branchId: '1' },
-  'piotr.misko@contractus.com.pl': { branchId: '1' },
-  'tomasz.radziwon@contractus.com.pl': { branchId: '1' },
-  'jaroslaw.wnorowski@contractus.com.pl': { branchId: '1' },
-  'krzysztof.kakareko@contractus.com.pl': { branchId: '1' },
-  'maksymilian.czeczko@contractus.com.pl': { branchId: '1' },
-  'tomasz.raciborski@contractus.com.pl': { branchId: '1' },
-  'konrad.ostrowski@contractus.com.pl': { branchId: '1' },
-  'bartlomiej.zajkowski@contractus.com.pl': { branchId: '1' },
-  'patryk.sak@contractus.com.pl': { branchId: '1' },
-  'mateusz.grabek@contractus.com.pl': { branchId: '5' },
-  'kamil.staskiewicz@contractus.com.pl': { branchId: '5' },
-  'lukasz.brodowski@contractus.com.pl': { branchId: '5' },
-  'przemyslaw.kuligowski@contractus.com.pl': { branchId: '4' },
-  'mateusz.zdzichowski@contractus.com.pl': { branchId: '4' },
-  'krzysztof.mazur@contractus.com.pl': { branchId: '4' },
-  'zbigniew.wolinski@contractus.com.pl': { branchId: '4' },
-  'damian.skarzynski@contractus.com.pl': { branchId: '4' },
-  'grzegorz.borkowski@contractus.com.pl': { branchId: '4' },
-  'cezary.wiacek@contractus.com.pl': { branchId: '4' },
-  'pawel.pytlak@contractus.com.pl': { branchId: '4' },
-  'marcin.pierzynowski@contractus.com.pl': { branchId: '2' },
-  'patryk.pikus@contractus.com.pl': { branchId: '2' },
-  'krzysztof.lewicki@contractus.com.pl': { branchId: '2' },
-  'przemyslaw.rozicki@contractus.com.pl': { branchId: '2' },
-  'robert.dzierzgowski@contractus.com.pl': { branchId: '3' },
-  'michal.modzelewski@contractus.com.pl': { branchId: '3' },
-  'adam.baginski@contractus.com.pl': { branchId: '3' }
-};
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase();
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -113,35 +72,16 @@ const App: React.FC = () => {
     try {
       let { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
       const userEmail = (email || '').toLowerCase();
-      let finalRole = profile?.role || 'MECHANIK';
-      let finalBranch = profile?.branch_id ? String(profile.branch_id) : '1';
-
-      if (userEmail === MASTER_ADMIN_EMAIL.toLowerCase()) {
-        finalRole = 'ADMINISTRATOR';
-        finalBranch = '1';
-      } else if (userEmail === SPECIAL_USER_ADAM.toLowerCase()) {
-        finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '6'; 
-      } else if (userEmail === SPECIAL_USER_KARNIEWO.toLowerCase()) {
-        finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '2'; 
-      } else if (userEmail === SPECIAL_USER_ANDRZEJ.toLowerCase()) {
-        finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '1'; 
-      } else if (userEmail === SPECIAL_USER_LOMZA.toLowerCase()) {
-        finalRole = 'DORADCA SERWISOWY';
-        finalBranch = '3';
-      } else if (MECHANIC_DATA[userEmail]) {
-        finalRole = 'MECHANIK';
-        finalBranch = MECHANIC_DATA[userEmail].branchId;
-      }
 
       if (!profile) {
+        // Nowy użytkownik — utwórz profil z domyślną rolą MECHANIK
+        // Rolę i oddział zmienia administrator w panelu Użytkownicy
+        const role = userEmail === ADMIN_EMAIL ? 'ADMINISTRATOR' : 'MECHANIK';
         const { data: newProfile, error: insertError } = await supabase.from('profiles').upsert({
           id: userId,
           email: userEmail,
-          role: finalRole,
-          branch_id: Number(finalBranch),
+          role,
+          branch_id: 1,
           first_name: registrationData?.firstName || 'Nowy',
           last_name: registrationData?.lastName || 'Pracownik',
           status: 'AKTYWNY'
@@ -152,13 +92,13 @@ const App: React.FC = () => {
       const finalUser: User = {
         id: userId,
         email: userEmail,
-        role: finalRole as any,
+        role: (profile?.role || 'MECHANIK') as any,
         status: profile?.status || 'AKTYWNY',
-        branch_id: finalBranch,
+        branch_id: profile?.branch_id ? String(profile.branch_id) : '1',
         first_name: profile?.first_name,
         last_name: profile?.last_name
       };
-      
+
       setUser(finalUser);
       if (finalUser.role === 'ADMINISTRATOR') setActiveModule('DASHBOARD');
       setSimulationBranchId(finalUser.role === 'ADMINISTRATOR' ? 'all' : finalUser.branch_id || '1');

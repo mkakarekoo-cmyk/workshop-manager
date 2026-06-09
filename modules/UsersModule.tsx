@@ -65,7 +65,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ user: currentUser, branches, 
     const state = editStates[id];
     if (!state) return;
     const targetUser = allUsers.find(u => u.id === id);
-    if (targetUser?.email?.toLowerCase() === 'm.kakarekoo@gmail.com') return;
+    if (targetUser?.email?.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase()) return;
 
     setIsSavingId(id);
     try {
@@ -198,7 +198,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ user: currentUser, branches, 
                   </td>
                 </tr>
               ) : filteredUsers.map(u => {
-                const isSA = u.email?.toLowerCase() === 'm.kakarekoo@gmail.com';
+                const isSA = u.email?.toLowerCase() === (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase();
                 const s = editStates[u.id] || { role: u.role, branch_id: String(u.branch_id) };
                 const isChanged = s.role !== u.role || String(s.branch_id) !== String(u.branch_id);
                 const isConfirming = confirmDeleteId === u.id;
