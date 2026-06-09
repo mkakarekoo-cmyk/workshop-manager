@@ -33,9 +33,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   internalItems.push(
     { id: 'BAZA NARZĘDZI' as ModuleType, label: 'BAZA NARZĘDZI', icon: Wrench },
     { id: 'MOJE NARZĘDZIA' as ModuleType, label: 'MOJE NARZĘDZIA', icon: Briefcase },
-    { id: 'MOJA FLOTA' as ModuleType, label: 'MOJA FLOTA', icon: Truck },
     { id: 'GRAFIK' as ModuleType, label: 'GRAFIK', icon: CalendarDays }
   );
+
+  if (isSuperAdmin) {
+    internalItems.push({ id: 'MOJA FLOTA' as ModuleType, label: 'MOJA FLOTA', icon: Truck });
+  }
 
   if (isSuperAdmin) internalItems.push({ id: 'UŻYTKOWNICY' as ModuleType, label: 'UŻYTKOWNICY', icon: Users });
 
